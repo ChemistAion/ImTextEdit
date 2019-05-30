@@ -6,9 +6,10 @@
 #include <memory>
 #include <unordered_set>
 #include <unordered_map>
+#include <thread>
 #include <map>
 #include <regex>
-#include "imgui.h"
+#include <imgui/imgui.h>
 
 class TextEditor
 {
@@ -134,7 +135,7 @@ public:
 		bool mMultiLineComment : 1;
 		bool mPreprocessor : 1;
 
-		Glyph(Char aChar, PaletteIndex aColorIndex) : mChar(aChar), mColorIndex(aColorIndex), 
+		Glyph(Char aChar, PaletteIndex aColorIndex) : mChar(aChar), mColorIndex(aColorIndex),
 			mComment(false), mMultiLineComment(false), mPreprocessor(false) {}
 	};
 
@@ -160,12 +161,12 @@ public:
 		TokenRegexStrings mTokenRegexStrings;
 
 		bool mCaseSensitive;
-		
+
 		LanguageDefinition()
 			: mPreprocChar('#'), mAutoIndentation(true), mTokenize(nullptr), mCaseSensitive(true)
 		{
 		}
-		
+
 		static const LanguageDefinition& CPlusPlus();
 		static const LanguageDefinition& HLSL();
 		static const LanguageDefinition& GLSL();
@@ -173,6 +174,10 @@ public:
 		static const LanguageDefinition& SQL();
 		static const LanguageDefinition& AngelScript();
 		static const LanguageDefinition& Lua();
+
+	private:
+		static void m_HLSLDocumentation(Identifiers& idents);
+		static void m_GLSLDocumentation(Identifiers& idents);
 	};
 
 	TextEditor();
@@ -194,15 +199,18 @@ public:
 	std::vector<std::string> GetTextLines() const;
 	std::string GetSelectedText() const;
 	std::string GetCurrentLineText()const;
-	
+
 	int GetTotalLines() const { return (int)mLines.size(); }
 	bool IsOverwrite() const { return mOverwrite; }
 
+	bool IsFocused() const { return mFocused; }
 	void SetReadOnly(bool aValue);
 	bool IsReadOnly() const { return mReadOnly; }
 	bool IsTextChanged() const { return mTextChanged; }
 	bool IsCursorPositionChanged() const { return mCursorPositionChanged; }
+	inline void ResetTextChanged() { mTextChanged = false; }
 
+	ImVec2 CoordinatesToScreenPos(const TextEditor::Coordinates& aPosition) const;
 	Coordinates GetCursorPosition() const { return GetActualCursorCoordinates(); }
 	void SetCursorPosition(const Coordinates& aPosition);
 
@@ -235,13 +243,28 @@ public:
 	void Undo(int aSteps = 1);
 	void Redo(int aSteps = 1);
 
+	inline void SetTabSize(int s) { mTabSize = s; }
+	inline int GetTabSize() { return mTabSize; }
+
+	inline void SetInsertSpaces(bool s) { mInsertSpaces = s; }
+	inline int GetInsertSpaces() { return mInsertSpaces; }
+
+	inline void SetSmartIndent(bool s) { mSmartIndent = s; }
+	inline void SetHighlightLine(bool s) { mHighlightLine = s; }
+	inline void SetCompleteBraces(bool s) { mCompleteBraces = s; }
+	inline void SetHorizontalScroll(bool s) { mHorizontalScroll = s; }
+	inline void SetSmartPredictions(bool s) { mAutocomplete = s; }
+
+	inline void SetShowLineNumbers(bool s) { mShowLineNumbers = s; mTextStart = s ? 20 : 6; mLeftMargin = s ? 10 : -20; }
+	inline int GetTextStart() const { return mShowLineNumbers ? 7 : 3; }
+
 	static const Palette& GetDarkPalette();
 	static const Palette& GetLightPalette();
 	static const Palette& GetRetroBluePalette();
 
 private:
 	typedef std::vector<std::pair<std::regex, PaletteIndex>> RegexList;
-
+	
 	struct EditorState
 	{
 		Coordinates mSelectionStart;
@@ -322,7 +345,22 @@ private:
 	EditorState mState;
 	UndoBuffer mUndoBuffer;
 	int mUndoIndex;
-	
+
+	bool mAutocomplete;
+	std::string mACWord;
+	std::vector<std::string> mACSuggestions;
+	int mACIndex;
+	bool mACOpened;
+	bool mACSwitched; // if == true then allow selection with enter
+	Coordinates mACPosition;
+
+	bool mHorizontalScroll;
+	bool mCompleteBraces;
+	bool mShowLineNumbers;
+	bool mHighlightLine;
+	bool mInsertSpaces;
+	bool mSmartIndent;
+	bool mFocused;
 	int mTabSize;
 	bool mOverwrite;
 	bool mReadOnly;
@@ -346,6 +384,6 @@ private:
 	ErrorMarkers mErrorMarkers;
 	ImVec2 mCharAdvance;
 	Coordinates mInteractiveStart, mInteractiveEnd;
-	
+
 	float mLastClick;
 };

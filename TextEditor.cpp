@@ -1,13 +1,11 @@
 #include <algorithm>
+#include <functional>
 #include <chrono>
 #include <string>
 #include <regex>
 #include <cmath>
 
 #include "TextEditor.h"
-
-#define IMGUI_DEFINE_MATH_OPERATORS
-#include "imgui.h" // for imGui::GetCurrentWindow()
 
 // TODO
 // - multiline comments vs single-line: latter is blocking start of a ML
@@ -18,7 +16,7 @@ template<class InputIt1, class InputIt2, class BinaryPredicate>
 bool equals(InputIt1 first1, InputIt1 last1,
 	InputIt2 first2, InputIt2 last2, BinaryPredicate p)
 {
-	for (; first1 != last1 && first2 != last2; ++first1, ++first2)
+	for (; first1 != last1 && first2 != last2; ++first1, ++first2) 
 	{
 		if (!p(*first1, *first2))
 			return false;
@@ -29,7 +27,15 @@ bool equals(InputIt1 first1, InputIt1 last1,
 TextEditor::TextEditor()
 	: mLineSpacing(1.0f)
 	, mUndoIndex(0)
+	, mInsertSpaces(false)
 	, mTabSize(4)
+	, mAutocomplete(true)
+	, mACOpened(false)
+	, mHighlightLine(true)
+	, mHorizontalScroll(true)
+	, mCompleteBraces(true)
+	, mShowLineNumbers(true)
+	, mSmartIndent(true)
 	, mOverwrite(false)
 	, mReadOnly(false)
 	, mWithinRender(false)
@@ -175,7 +181,7 @@ void TextEditor::DeleteRange(const Coordinates & aStart, const Coordinates & aEn
 		auto& lastLine = mLines[aEnd.mLine];
 
 		firstLine.erase(firstLine.begin() + aStart.mColumn, firstLine.end());
-		lastLine.erase(lastLine.begin(), lastLine.begin() + aEnd.mColumn);
+		lastLine.erase(lastLine.begin(), lastLine.begin() + std::min((int)lastLine.size(), aEnd.mColumn));
 
 		if (aStart.mLine < aEnd.mLine)
 			firstLine.insert(firstLine.end(), lastLine.begin(), lastLine.end());
@@ -195,7 +201,8 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 	auto chr = *aValue;
 	while (chr != '\0')
 	{
-		assert(!mLines.empty());
+		if (mLines.empty())
+			mLines.push_back(Line());
 
 		if (chr == '\r')
 		{
@@ -416,6 +423,7 @@ TextEditor::Line& TextEditor::InsertLine(int aIndex)
 std::string TextEditor::GetWordUnderCursor() const
 {
 	auto c = GetCursorPosition();
+	c.mColumn = std::max(c.mColumn - 1, 0);
 	return GetWordAt(c);
 }
 
@@ -432,7 +440,7 @@ std::string TextEditor::GetWordAt(const Coordinates & aCoords) const
 	return r;
 }
 
-ImU32 TextEditor::GetGlyphColor(const Glyph & aGlyph) const
+ImU32 TextEditor::GetGlyphColor(const Glyph& aGlyph) const
 {
 	if (aGlyph.mComment)
 		return mPalette[(int)PaletteIndex::Comment];
@@ -468,15 +476,37 @@ void TextEditor::HandleKeyboardInputs()
 		io.WantCaptureKeyboard = true;
 		io.WantTextInput = true;
 
+		// auto completion shortcuts
+		if (mACOpened) {
+			int keyCount = 0;
+
+			for (size_t i = 0; i < io.InputQueueCharacters.Size; i++)
+				if (io.InputQueueCharacters[i] != 0)
+					keyCount++;
+			for (size_t i = 0; i < ImGuiKey_COUNT; i++)
+				keyCount += ImGui::IsKeyPressed(ImGui::GetKeyIndex(i));
+
+			if (keyCount != 0) {
+				if (!ctrl && !alt && !shift && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_UpArrow)))
+					mACIndex = std::max(mACIndex - 1, 0), mACSwitched = true;
+				else if (!ctrl && !alt && !shift && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_DownArrow)))
+					mACIndex = std::min(mACIndex + 1, (int)mACSuggestions.size()), mACSwitched = true;
+				else if (!ctrl && !alt && !shift && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Tab))) {}
+				else if (mACSwitched && !ctrl && !alt && !shift && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Enter))) {}
+				else mACOpened = false;
+			}
+		}
+
+		// regular shortcuts
 		if (!IsReadOnly() && ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Z)))
 			Undo();
 		else if (!IsReadOnly() && !ctrl && !shift && alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Backspace)))
 			Undo();
 		else if (!IsReadOnly() && ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Y)))
 			Redo();
-		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_UpArrow)))
+		else if (!mACOpened && !ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_UpArrow)))
 			MoveUp(1, shift);
-		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_DownArrow)))
+		else if (!mACOpened && !ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_DownArrow)))
 			MoveDown(1, shift);
 		else if (!alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_LeftArrow)))
 			MoveLeft(1, shift, ctrl);
@@ -494,10 +524,16 @@ void TextEditor::HandleKeyboardInputs()
 			MoveHome(shift);
 		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_End)))
 			MoveEnd(shift);
-		else if (!IsReadOnly() && !ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete)))
+		else if (!IsReadOnly() && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete))) {
+			if (ctrl)
+				MoveRight(1, true, true);
 			Delete();
-		else if (!IsReadOnly() && !ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Backspace)))
+		}
+		else if (!IsReadOnly() && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Backspace))) {
+			if (ctrl)
+				MoveLeft(1, true, true);
 			BackSpace();
+		}
 		else if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Insert)))
 			mOverwrite ^= true;
 		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Insert)))
@@ -514,6 +550,65 @@ void TextEditor::HandleKeyboardInputs()
 			Cut();
 		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_A)))
 			SelectAll();
+		else if (mAutocomplete && ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Space))) {
+			mACWord = GetWordUnderCursor();
+
+			bool isValid = false;
+			for (int i = 0; i < mACWord.size(); i++)
+				if ((mACWord[i] >= 'a' && mACWord[i] <= 'z') || (mACWord[i] >= 'A' && mACWord[i] <= 'Z'))
+				{
+					isValid = true;
+					break;
+				}
+
+			if (isValid) {
+				mACSuggestions.clear();
+				mACIndex = 0;
+				mACSwitched = false;
+
+				// starting with the written word
+				for (auto& str : mLanguageDefinition.mKeywords)
+					if (str.find(mACWord) == 0)
+						mACSuggestions.push_back(str);
+
+				for (auto& str : mLanguageDefinition.mIdentifiers)
+					if (str.first.find(mACWord) == 0)
+						mACSuggestions.push_back(str.first);
+
+				// containing the word
+				for (auto& str : mLanguageDefinition.mKeywords) {
+					size_t ind = str.find(mACWord);
+					if (ind > 0 && ind != std::string::npos)
+						mACSuggestions.push_back(str);
+				}
+
+				for (auto& str : mLanguageDefinition.mIdentifiers) {
+					size_t ind = str.first.find(mACWord);
+					if (ind > 0 && ind != std::string::npos)
+						mACSuggestions.push_back(str.first);
+				}
+
+				if (mACSuggestions.size() > 0) {
+					mACOpened = true;
+					mACPosition = GetCursorPosition();
+				}
+			}
+		}
+		else if (mACOpened && !ctrl && !alt && !shift && (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Tab))
+			|| (mACSwitched && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Enter))))) {
+
+			auto curCoord = GetCursorPosition();
+			curCoord.mColumn = std::max(curCoord.mColumn - 1, 0);
+
+			auto acStart = FindWordStart(curCoord);
+			auto acEnd = FindWordEnd(curCoord);
+
+			SetSelection(acStart, acEnd);
+			BackSpace();
+			InsertText(mACSuggestions[mACIndex]);
+
+			mACOpened = false;
+		}
 		else if (!IsReadOnly() && !ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Enter)))
 			EnterCharacter('\n', false);
 		else if (!IsReadOnly() && !ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Tab)))
@@ -592,6 +687,7 @@ void TextEditor::HandleMouseInputs()
 			*/
 			else if (click)
 			{
+				mACOpened = false;
 				mState.mCursorPosition = mInteractiveStart = mInteractiveEnd = SanitizeCoordinates(ScreenPosToCoordinates(ImGui::GetMousePos()));
 				if (ctrl)
 					mSelectionMode = SelectionMode::Word;
@@ -625,14 +721,14 @@ void TextEditor::Render()
 		color.w *= ImGui::GetStyle().Alpha;
 		mPalette[i] = ImGui::ColorConvertFloat4ToU32(color);
 	}
-	
+
 	static std::string buffer;
 	assert(buffer.empty());
-	
+
 	auto contentSize = ImGui::GetWindowContentRegionMax();
 	auto drawList = ImGui::GetWindowDrawList();
 	float longest(mTextStart);
-	
+
 	if (mScrollToTop)
 	{
 		mScrollToTop = false;
@@ -662,7 +758,7 @@ void TextEditor::Render()
 			ImVec2 lineStartScreenPos = ImVec2(cursorScreenPos.x, cursorScreenPos.y + lineNo * mCharAdvance.y);
 			ImVec2 textScreenPos = ImVec2(lineStartScreenPos.x + mTextStart, lineStartScreenPos.y);
 
-			auto& line = mLines[lineNo];
+			auto & line = mLines[lineNo];
 			longest = std::max(mTextStart + TextDistanceToLineStart(Coordinates(lineNo, (int)line.size())), longest);
 			auto columnNo = 0;
 			Coordinates lineStartCoord(lineNo, 0);
@@ -719,17 +815,19 @@ void TextEditor::Render()
 			}
 
 			// Draw line number (right aligned)
-			snprintf(buf, 16, "%d  ", lineNo + 1);
-			
-			auto lineNoWidth = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x;
-			drawList->AddText(ImVec2(lineStartScreenPos.x + mTextStart - lineNoWidth, lineStartScreenPos.y), mPalette[(int)PaletteIndex::LineNumber], buf);
+			if (mShowLineNumbers) {
+				snprintf(buf, 16, "%d  ", lineNo + 1);
+
+				auto lineNoWidth = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x;
+				drawList->AddText(ImVec2(lineStartScreenPos.x + mTextStart - lineNoWidth, lineStartScreenPos.y), mPalette[(int)PaletteIndex::LineNumber], buf);
+			}
 
 			// Highlight the current line (where the cursor is)
 			if (mState.mCursorPosition.mLine == lineNo)
 			{
 				auto focused = ImGui::IsWindowFocused();
 
-				if (!HasSelection())
+				if (!HasSelection() && mHighlightLine)
 				{
 					auto end = ImVec2(start.x + contentSize.x + scrollX, start.y + mCharAdvance.y);
 					drawList->AddRectFilled(start, end, mPalette[(int)(focused ? PaletteIndex::CurrentLineFill : PaletteIndex::CurrentLineFillInactive)]);
@@ -826,6 +924,53 @@ void TextEditor::Render()
 		ImGui::SetWindowFocus();
 		mScrollToCursor = false;
 	}
+
+	// suggestions window
+	if (mACOpened) {
+		auto acCoord = mACPosition;
+		acCoord.mColumn++;
+
+		ImFont* font = ImGui::GetFont();
+		ImGui::PopFont();
+
+		ImGui::SetNextWindowPos(CoordinatesToScreenPos(acCoord), ImGuiCond_Always);
+		ImGui::PushStyleColor(ImGuiCol_ChildWindowBg, ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
+		ImGui::BeginChild("##texteditor_autocompl", ImVec2(150, 100), true);
+
+		for (int i = 0; i < mACSuggestions.size(); i++) {
+			ImGui::Selectable(mACSuggestions[i].c_str(), i == mACIndex);
+			if (i == mACIndex)
+				ImGui::SetScrollHereY();
+		}
+
+		ImGui::EndChild();
+		ImGui::PopStyleColor();
+
+		ImGui::PushFont(font);
+
+		ImGui::SetWindowFocus();
+		if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Escape)))
+			mACOpened = false;
+	}
+}
+
+ImVec2 TextEditor::CoordinatesToScreenPos(const TextEditor::Coordinates& aPosition) const
+{
+	ImVec2 origin = ImGui::GetCursorScreenPos();
+	int dist = 0;
+
+	auto& line = mLines[aPosition.mLine];
+	for (int i = 0; i < std::min(line.size(), (size_t)aPosition.mColumn); i++) {
+		if (line[i].mChar == '\t')
+			dist += mTabSize;
+		else dist++;
+	}
+
+
+	int retY = origin.y + aPosition.mLine * mCharAdvance.y;
+	int retX = origin.x + GetTextStart() * mCharAdvance.x + dist * mCharAdvance.x - ImGui::GetScrollX();
+
+	return ImVec2(retX, retY);
 }
 
 void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
@@ -836,7 +981,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 
 	ImGui::PushStyleColor(ImGuiCol_ChildWindowBg, ImGui::ColorConvertU32ToFloat4(mPalette[(int)PaletteIndex::Background]));
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
-	ImGui::BeginChild(aTitle, aSize, aBorder, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_AlwaysHorizontalScrollbar | ImGuiWindowFlags_NoMove);
+	ImGui::BeginChild(aTitle, aSize, aBorder, (ImGuiWindowFlags_HorizontalScrollbar * mHorizontalScroll) | ImGuiWindowFlags_NoMove);
 	ImGui::PushAllowKeyboardFocus(true);
 
 	HandleKeyboardInputs();
@@ -869,7 +1014,7 @@ void TextEditor::SetText(const std::string & aText)
 			mLines.back().emplace_back(Glyph(chr, PaletteIndex::Default));
 		}
 	}
-	
+
 	mTextChanged = true;
 	mScrollToTop = true;
 
@@ -1007,7 +1152,8 @@ void TextEditor::EnterCharacter(Char aChar, bool aShift)
 	auto coord = GetActualCursorCoordinates();
 	u.mAddedStart = coord;
 
-	assert(!mLines.empty());
+	if (mLines.empty())
+		mLines.push_back(Line());
 
 	if (aChar == '\n')
 	{
@@ -1015,7 +1161,7 @@ void TextEditor::EnterCharacter(Char aChar, bool aShift)
 		auto& line = mLines[coord.mLine];
 		auto& newLine = mLines[coord.mLine + 1];
 
-		if (mLanguageDefinition.mAutoIndentation)
+		if (mLanguageDefinition.mAutoIndentation && mSmartIndent)
 		{
 			for (size_t it = 0; it < line.size() && isblank(line[it].mChar); ++it)
 				newLine.push_back(line[it]);
@@ -1046,6 +1192,20 @@ void TextEditor::EnterCharacter(Char aChar, bool aShift)
 
 	Colorize(coord.mLine - 1, 3);
 	EnsureCursorVisible();
+
+	// auto brace completion
+	if (mCompleteBraces) {
+		if (aChar == '{') {
+			EnterCharacter('\n', false);
+			EnterCharacter('}', false);
+		} else if (aChar == '(')
+			EnterCharacter(')', false);
+		else if (aChar == '[')
+			EnterCharacter(']', false);
+
+		if (aChar == '{' || aChar == '(' || aChar == '[')
+			mState.mCursorPosition.mColumn--;
+	}
 }
 
 void TextEditor::SetReadOnly(bool aValue)
@@ -1126,7 +1286,7 @@ void TextEditor::InsertText(const char * aValue)
 		return;
 
 	auto pos = GetActualCursorCoordinates();
-	auto start = std::min(pos, mState.mSelectionStart);
+	auto start = std::min<Coordinates>(pos, mState.mSelectionStart);
 	int totalLines = pos.mLine - start.mLine;
 
 	totalLines += InsertTextAt(pos, aValue);
@@ -1153,7 +1313,7 @@ void TextEditor::DeleteSelection()
 void TextEditor::MoveUp(int aAmount, bool aSelect)
 {
 	auto oldPos = mState.mCursorPosition;
-	mState.mCursorPosition.mLine = std::max(0, mState.mCursorPosition.mLine - aAmount);
+	mState.mCursorPosition.mLine = std::max<int>(0, mState.mCursorPosition.mLine - aAmount);
 	if (oldPos != mState.mCursorPosition)
 	{
 		if (aSelect)
@@ -1180,7 +1340,7 @@ void TextEditor::MoveDown(int aAmount, bool aSelect)
 {
 	assert(mState.mCursorPosition.mColumn >= 0);
 	auto oldPos = mState.mCursorPosition;
-	mState.mCursorPosition.mLine = std::max(0, std::min((int)mLines.size() - 1, mState.mCursorPosition.mLine + aAmount));
+	mState.mCursorPosition.mLine = std::max<int>(0, std::min<int>((int)mLines.size() - 1, mState.mCursorPosition.mLine + aAmount));
 
 	if (mState.mCursorPosition != oldPos)
 	{
@@ -1264,13 +1424,13 @@ void TextEditor::MoveRight(int aAmount, bool aSelect, bool aWordMode)
 		{
 			if (mState.mCursorPosition.mLine < (int)mLines.size() - 1)
 			{
-				mState.mCursorPosition.mLine = std::max(0, std::min((int)mLines.size() - 1, mState.mCursorPosition.mLine + 1));
+				mState.mCursorPosition.mLine = std::max<int>(0, std::min<int>((int)mLines.size() - 1, mState.mCursorPosition.mLine + 1));
 				mState.mCursorPosition.mColumn = 0;
 			}
 		}
 		else
 		{
-			mState.mCursorPosition.mColumn = std::max(0, std::min((int)line.size(), mState.mCursorPosition.mColumn + 1));
+			mState.mCursorPosition.mColumn = std::max<int>(0, std::min<int>((int)line.size(), mState.mCursorPosition.mColumn + 1));
 			if (aWordMode)
 				mState.mCursorPosition = FindWordEnd(mState.mCursorPosition);
 		}
@@ -1482,6 +1642,13 @@ void TextEditor::BackSpace()
 		else
 		{
 			auto& line = mLines[mState.mCursorPosition.mLine];
+
+			if (mCompleteBraces && pos.mColumn < line.size()) {
+				if ((line[pos.mColumn - 1].mChar == '(' && line[pos.mColumn].mChar == ')') ||
+					(line[pos.mColumn - 1].mChar == '{' && line[pos.mColumn].mChar == '}') ||
+					(line[pos.mColumn - 1].mChar == '[' && line[pos.mColumn].mChar == ']'))
+					Delete();
+			}
 
 			u.mRemoved = line[pos.mColumn - 1].mChar;
 			u.mRemovedStart = u.mRemovedEnd = GetActualCursorCoordinates();
@@ -1739,11 +1906,11 @@ void TextEditor::ProcessInputs()
 
 void TextEditor::Colorize(int aFromLine, int aLines)
 {
-	int toLine = aLines == -1 ? (int)mLines.size() : std::min((int)mLines.size(), aFromLine + aLines);
-	mColorRangeMin = std::min(mColorRangeMin, aFromLine);
-	mColorRangeMax = std::max(mColorRangeMax, toLine);
-	mColorRangeMin = std::max(0, mColorRangeMin);
-	mColorRangeMax = std::max(mColorRangeMin, mColorRangeMax);
+	int toLine = aLines == -1 ? (int)mLines.size() : std::min<int>((int)mLines.size(), aFromLine + aLines);
+	mColorRangeMin = std::min<int>(mColorRangeMin, aFromLine);
+	mColorRangeMax = std::max<int>(mColorRangeMax, toLine);
+	mColorRangeMin = std::max<int>(0, mColorRangeMin);
+	mColorRangeMax = std::max<int>(mColorRangeMin, mColorRangeMax);
 	mCheckComments = true;
 }
 
@@ -1772,15 +1939,15 @@ void TextEditor::ColorizeRange(int aFromLine, int aToLine)
 			col.mColorIndex = PaletteIndex::Default;
 		}
 
-		const char * bufferBegin = &buffer.front();
-		const char * bufferEnd = bufferBegin + buffer.size();
+		const char* bufferBegin = &buffer.front();
+		const char* bufferEnd = bufferBegin + buffer.size();
 
 		auto last = bufferEnd;
 
 		for (auto first = bufferBegin; first != last; )
 		{
-			const char * token_begin = nullptr;
-			const char * token_end = nullptr;
+			const char* token_begin = nullptr;
+			const char* token_end = nullptr;
 			PaletteIndex token_color = PaletteIndex::Default;
 
 			bool hasTokenizeResult = false;
@@ -2096,9 +2263,9 @@ void TextEditor::UndoRecord::Redo(TextEditor * aEditor)
 	aEditor->EnsureCursorVisible();
 }
 
-static bool TokenizeCStyleString(const char * in_begin, const char * in_end, const char *& out_begin, const char *& out_end)
+static bool TokenizeCStyleString(const char* in_begin, const char* in_end, const char*& out_begin, const char*& out_end)
 {
-	const char * p = in_begin;
+	const char* p = in_begin;
 
 	if (*p == '"')
 	{
@@ -2125,9 +2292,9 @@ static bool TokenizeCStyleString(const char * in_begin, const char * in_end, con
 	return false;
 }
 
-static bool TokenizeCStyleCharacterLiteral(const char * in_begin, const char * in_end, const char *& out_begin, const char *& out_end)
+static bool TokenizeCStyleCharacterLiteral(const char* in_begin, const char* in_end, const char*& out_begin, const char*& out_end)
 {
-	const char * p = in_begin;
+	const char* p = in_begin;
 
 	if (*p == '\'')
 	{
@@ -2152,9 +2319,9 @@ static bool TokenizeCStyleCharacterLiteral(const char * in_begin, const char * i
 	return false;
 }
 
-static bool TokenizeCStyleIdentifier(const char * in_begin, const char * in_end, const char *& out_begin, const char *& out_end)
+static bool TokenizeCStyleIdentifier(const char* in_begin, const char* in_end, const char*& out_begin, const char*& out_end)
 {
-	const char * p = in_begin;
+	const char* p = in_begin;
 
 	if ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || *p == '_')
 	{
@@ -2171,9 +2338,9 @@ static bool TokenizeCStyleIdentifier(const char * in_begin, const char * in_end,
 	return false;
 }
 
-static bool TokenizeCStyleNumber(const char * in_begin, const char * in_end, const char *& out_begin, const char *& out_end)
+static bool TokenizeCStyleNumber(const char* in_begin, const char* in_end, const char*& out_begin, const char*& out_end)
 {
-	const char * p = in_begin;
+	const char* p = in_begin;
 
 	const bool startsWithNumber = *p >= '0' && *p <= '9';
 
@@ -2403,32 +2570,12 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::HLSL()
 			"float1x1","float2x1","float3x1","float4x1","float1x2","float2x2","float3x2","float4x2",
 			"float1x3","float2x3","float3x3","float4x3","float1x4","float2x4","float3x4","float4x4",
 			"half1x1","half2x1","half3x1","half4x1","half1x2","half2x2","half3x2","half4x2",
-			"half1x3","half2x3","half3x3","half4x3","half1x4","half2x4","half3x4","half4x4",
+			"half1x3","half2x3","half3x3","half4x3","half1x4","half2x4","half3x4","half4x4"
 		};
 		for (auto& k : keywords)
 			langDef.mKeywords.insert(k);
 
-		static const char* const identifiers[] = {
-			"abort", "abs", "acos", "all", "AllMemoryBarrier", "AllMemoryBarrierWithGroupSync", "any", "asdouble", "asfloat", "asin", "asint", "asint", "asuint",
-			"asuint", "atan", "atan2", "ceil", "CheckAccessFullyMapped", "clamp", "clip", "cos", "cosh", "countbits", "cross", "D3DCOLORtoUBYTE4", "ddx",
-			"ddx_coarse", "ddx_fine", "ddy", "ddy_coarse", "ddy_fine", "degrees", "determinant", "DeviceMemoryBarrier", "DeviceMemoryBarrierWithGroupSync",
-			"distance", "dot", "dst", "errorf", "EvaluateAttributeAtCentroid", "EvaluateAttributeAtSample", "EvaluateAttributeSnapped", "exp", "exp2",
-			"f16tof32", "f32tof16", "faceforward", "firstbithigh", "firstbitlow", "floor", "fma", "fmod", "frac", "frexp", "fwidth", "GetRenderTargetSampleCount",
-			"GetRenderTargetSamplePosition", "GroupMemoryBarrier", "GroupMemoryBarrierWithGroupSync", "InterlockedAdd", "InterlockedAnd", "InterlockedCompareExchange",
-			"InterlockedCompareStore", "InterlockedExchange", "InterlockedMax", "InterlockedMin", "InterlockedOr", "InterlockedXor", "isfinite", "isinf", "isnan",
-			"ldexp", "length", "lerp", "lit", "log", "log10", "log2", "mad", "max", "min", "modf", "msad4", "mul", "noise", "normalize", "pow", "printf",
-			"Process2DQuadTessFactorsAvg", "Process2DQuadTessFactorsMax", "Process2DQuadTessFactorsMin", "ProcessIsolineTessFactors", "ProcessQuadTessFactorsAvg",
-			"ProcessQuadTessFactorsMax", "ProcessQuadTessFactorsMin", "ProcessTriTessFactorsAvg", "ProcessTriTessFactorsMax", "ProcessTriTessFactorsMin",
-			"radians", "rcp", "reflect", "refract", "reversebits", "round", "rsqrt", "saturate", "sign", "sin", "sincos", "sinh", "smoothstep", "sqrt", "step",
-			"tan", "tanh", "tex1D", "tex1D", "tex1Dbias", "tex1Dgrad", "tex1Dlod", "tex1Dproj", "tex2D", "tex2D", "tex2Dbias", "tex2Dgrad", "tex2Dlod", "tex2Dproj",
-			"tex3D", "tex3D", "tex3Dbias", "tex3Dgrad", "tex3Dlod", "tex3Dproj", "texCUBE", "texCUBE", "texCUBEbias", "texCUBEgrad", "texCUBElod", "texCUBEproj", "transpose", "trunc"
-		};
-		for (auto& k : identifiers)
-		{
-			Identifier id;
-			id.mDeclaration = "Built-in function";
-			langDef.mIdentifiers.insert(std::make_pair(std::string(k), id));
-		}
+		m_HLSLDocumentation(langDef.mIdentifiers);
 
 		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("[ \\t]*#[ \\t]*[a-zA-Z_]+", PaletteIndex::Preprocessor));
 		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("L?\\\"(\\\\.|[^\\\"])*\\\"", PaletteIndex::String));
@@ -2453,6 +2600,152 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::HLSL()
 	}
 	return langDef;
 }
+void TextEditor::LanguageDefinition::m_HLSLDocumentation(Identifiers& idents)
+{
+	std::function<Identifier(const std::string&)> desc = [](const std::string & str) {
+		Identifier id;
+		id.mDeclaration = str;
+		return id;
+	};
+
+	/* SOURCE: https://docs.microsoft.com/en-us/windows/desktop/direct3dhlsl/dx-graphics-hlsl-intrinsic-functions */
+
+	idents.insert(std::make_pair("abort", desc("Terminates the current draw or dispatch call being executed.")));
+	idents.insert(std::make_pair("abs", desc("Absolute value (per component).")));
+	idents.insert(std::make_pair("acos", desc("Returns the arccosine of each component of x.")));
+	idents.insert(std::make_pair("all", desc("Test if all components of x are nonzero.")));
+	idents.insert(std::make_pair("AllMemoryBarrier", desc("Blocks execution of all threads in a group until all memory accesses have been completed.")));
+	idents.insert(std::make_pair("AllMemoryBarrierWithGroupSync", desc("Blocks execution of all threads in a group until all memory accesses have been completed and all threads in the group have reached this call.")));
+	idents.insert(std::make_pair("any", desc("Test if any component of x is nonzero.")));
+	idents.insert(std::make_pair("asdouble", desc("Reinterprets a cast value into a double.")));
+	idents.insert(std::make_pair("asfloat", desc("Convert the input type to a float.")));
+	idents.insert(std::make_pair("asin", desc("Returns the arcsine of each component of x.")));
+	idents.insert(std::make_pair("asint", desc("Convert the input type to an integer.")));
+	idents.insert(std::make_pair("asuint", desc("Convert the input type to an unsigned integer.")));
+	idents.insert(std::make_pair("atan", desc("Returns the arctangent of x.")));
+	idents.insert(std::make_pair("atan2", desc("Returns the arctangent of of two values (x,y).")));
+	idents.insert(std::make_pair("ceil", desc("Returns the smallest integer which is greater than or equal to x.")));
+	idents.insert(std::make_pair("CheckAccessFullyMapped", desc("Determines whether all values from a Sample or Load operation accessed mapped tiles in a tiled resource.")));
+	idents.insert(std::make_pair("clamp", desc("Clamps x to the range [min, max].")));
+	idents.insert(std::make_pair("clip", desc("Discards the current pixel, if any component of x is less than zero.")));
+	idents.insert(std::make_pair("cos", desc("Returns the cosine of x.")));
+	idents.insert(std::make_pair("cosh", desc("Returns the hyperbolic cosine of x.")));
+	idents.insert(std::make_pair("countbits", desc("Counts the number of bits (per component) in the input integer.")));
+	idents.insert(std::make_pair("cross", desc("Returns the cross product of two 3D vectors.")));
+	idents.insert(std::make_pair("D3DCOLORtoUBYTE4", desc("Swizzles and scales components of the 4D vector x to compensate for the lack of UBYTE4 support in some hardware.")));
+	idents.insert(std::make_pair("ddx", desc("Returns the partial derivative of x with respect to the screen-space x-coordinate.")));
+	idents.insert(std::make_pair("ddx_coarse", desc("Computes a low precision partial derivative with respect to the screen-space x-coordinate.")));
+	idents.insert(std::make_pair("ddx_fine", desc("Computes a high precision partial derivative with respect to the screen-space x-coordinate.")));
+	idents.insert(std::make_pair("ddy", desc("Returns the partial derivative of x with respect to the screen-space y-coordinate.")));
+	idents.insert(std::make_pair("ddy_coarse", desc("Returns the partial derivative of x with respect to the screen-space y-coordinate.")));
+	idents.insert(std::make_pair("ddy_fine", desc("Computes a high precision partial derivative with respect to the screen-space y-coordinate.")));
+	idents.insert(std::make_pair("degrees", desc("Converts x from radians to degrees.")));
+	idents.insert(std::make_pair("determinant", desc("Returns the determinant of the square matrix m.")));
+	idents.insert(std::make_pair("DeviceMemoryBarrier", desc("Blocks execution of all threads in a group until all device memory accesses have been completed.")));
+	idents.insert(std::make_pair("DeviceMemoryBarrierWithGroupSync", desc("Blocks execution of all threads in a group until all device memory accesses have been completed and all threads in the group have reached this call.")));
+	idents.insert(std::make_pair("distance", desc("Returns the distance between two points.")));
+	idents.insert(std::make_pair("dot", desc("Returns the dot product of two vectors.")));
+	idents.insert(std::make_pair("dst", desc("Calculates a distance vector.")));
+	idents.insert(std::make_pair("errorf", desc("Submits an error message to the information queue.")));
+	idents.insert(std::make_pair("EvaluateAttributeAtCentroid", desc("Evaluates at the pixel centroid.")));
+	idents.insert(std::make_pair("EvaluateAttributeAtSample", desc("Evaluates at the indexed sample location.")));
+	idents.insert(std::make_pair("EvaluateAttributeSnapped", desc("Evaluates at the pixel centroid with an offset.")));
+	idents.insert(std::make_pair("exp", desc("Returns the base-e exponent.")));
+	idents.insert(std::make_pair("exp2", desc("Base 2 exponent(per component).")));
+	idents.insert(std::make_pair("f16tof32", desc("Converts the float16 stored in the low-half of the uint to a float.")));
+	idents.insert(std::make_pair("f32tof16", desc("Converts an input into a float16 type.")));
+	idents.insert(std::make_pair("faceforward", desc("Returns -n * sign(dot(i, ng)).")));
+	idents.insert(std::make_pair("firstbithigh", desc("Gets the location of the first set bit starting from the highest order bit and working downward, per component.")));
+	idents.insert(std::make_pair("firstbitlow", desc("Returns the location of the first set bit starting from the lowest order bit and working upward, per component.")));
+	idents.insert(std::make_pair("floor", desc("Returns the greatest integer which is less than or equal to x.")));
+	idents.insert(std::make_pair("fma", desc("Returns the double-precision fused multiply-addition of a * b + c.")));
+	idents.insert(std::make_pair("fmod", desc("Returns the floating point remainder of x/y.")));
+	idents.insert(std::make_pair("frac", desc("Returns the fractional part of x.")));
+	idents.insert(std::make_pair("frexp", desc("Returns the mantissa and exponent of x.")));
+	idents.insert(std::make_pair("fwidth", desc("Returns abs(ddx(x)) + abs(ddy(x))")));
+	idents.insert(std::make_pair("GetRenderTargetSampleCount", desc("Returns the number of render-target samples.")));
+	idents.insert(std::make_pair("GetRenderTargetSamplePosition", desc("Returns a sample position (x,y) for a given sample index.")));
+	idents.insert(std::make_pair("GroupMemoryBarrier", desc("Blocks execution of all threads in a group until all group shared accesses have been completed.")));
+	idents.insert(std::make_pair("GroupMemoryBarrierWithGroupSync", desc("Blocks execution of all threads in a group until all group shared accesses have been completed and all threads in the group have reached this call.")));
+	idents.insert(std::make_pair("InterlockedAdd", desc("Performs a guaranteed atomic add of value to the dest resource variable.")));
+	idents.insert(std::make_pair("InterlockedAnd", desc("Performs a guaranteed atomic and.")));
+	idents.insert(std::make_pair("InterlockedCompareExchange", desc("Atomically compares the input to the comparison value and exchanges the result.")));
+	idents.insert(std::make_pair("InterlockedCompareStore", desc("Atomically compares the input to the comparison value.")));
+	idents.insert(std::make_pair("InterlockedExchange", desc("Assigns value to dest and returns the original value.")));
+	idents.insert(std::make_pair("InterlockedMax", desc("Performs a guaranteed atomic max.")));
+	idents.insert(std::make_pair("InterlockedMin", desc("Performs a guaranteed atomic min.")));
+	idents.insert(std::make_pair("InterlockedOr", desc("Performs a guaranteed atomic or.")));
+	idents.insert(std::make_pair("InterlockedXor", desc("Performs a guaranteed atomic xor.")));
+	idents.insert(std::make_pair("isfinite", desc("Returns true if x is finite, false otherwise.")));
+	idents.insert(std::make_pair("isinf", desc("Returns true if x is +INF or -INF, false otherwise.")));
+	idents.insert(std::make_pair("isnan", desc("Returns true if x is NAN or QNAN, false otherwise.")));
+	idents.insert(std::make_pair("ldexp", desc("Returns x * 2exp")));
+	idents.insert(std::make_pair("length", desc("Returns the length of the vector v.")));
+	idents.insert(std::make_pair("lerp", desc("Returns x + s(y - x).")));
+	idents.insert(std::make_pair("lit", desc("Returns a lighting vector (ambient, diffuse, specular, 1)")));
+	idents.insert(std::make_pair("log", desc("Returns the base-e logarithm of x.")));
+	idents.insert(std::make_pair("log10", desc("Returns the base-10 logarithm of x.")));
+	idents.insert(std::make_pair("log2", desc("Returns the base - 2 logarithm of x.")));
+	idents.insert(std::make_pair("mad", desc("Performs an arithmetic multiply/add operation on three values.")));
+	idents.insert(std::make_pair("max", desc("Selects the greater of x and y.")));
+	idents.insert(std::make_pair("min", desc("Selects the lesser of x and y.")));
+	idents.insert(std::make_pair("modf", desc("Splits the value x into fractional and integer parts.")));
+	idents.insert(std::make_pair("msad4", desc("Compares a 4-byte reference value and an 8-byte source value and accumulates a vector of 4 sums.")));
+	idents.insert(std::make_pair("mul", desc("Performs matrix multiplication using x and y.")));
+	idents.insert(std::make_pair("noise", desc("Generates a random value using the Perlin-noise algorithm.")));
+	idents.insert(std::make_pair("normalize", desc("Returns a normalized vector.")));
+	idents.insert(std::make_pair("pow", desc("Returns x^n.")));
+	idents.insert(std::make_pair("printf", desc("Submits a custom shader message to the information queue.")));
+	idents.insert(std::make_pair("Process2DQuadTessFactorsAvg", desc("Generates the corrected tessellation factors for a quad patch.")));
+	idents.insert(std::make_pair("Process2DQuadTessFactorsMax", desc("Generates the corrected tessellation factors for a quad patch.")));
+	idents.insert(std::make_pair("Process2DQuadTessFactorsMin", desc("Generates the corrected tessellation factors for a quad patch.")));
+	idents.insert(std::make_pair("ProcessIsolineTessFactors", desc("Generates the rounded tessellation factors for an isoline.")));
+	idents.insert(std::make_pair("ProcessQuadTessFactorsAvg", desc("Generates the corrected tessellation factors for a quad patch.")));
+	idents.insert(std::make_pair("ProcessQuadTessFactorsMax", desc("Generates the corrected tessellation factors for a quad patch.")));
+	idents.insert(std::make_pair("ProcessQuadTessFactorsMin", desc("Generates the corrected tessellation factors for a quad patch.")));
+	idents.insert(std::make_pair("ProcessTriTessFactorsAvg", desc("Generates the corrected tessellation factors for a tri patch.")));
+	idents.insert(std::make_pair("ProcessTriTessFactorsMax", desc("Generates the corrected tessellation factors for a tri patch.")));
+	idents.insert(std::make_pair("ProcessTriTessFactorsMin", desc("Generates the corrected tessellation factors for a tri patch.")));
+	idents.insert(std::make_pair("radians", desc("Converts x from degrees to radians.")));
+	idents.insert(std::make_pair("rcp", desc("Calculates a fast, approximate, per-component reciprocal.")));
+	idents.insert(std::make_pair("reflect", desc("Returns a reflection vector.")));
+	idents.insert(std::make_pair("refract", desc("Returns the refraction vector.")));
+	idents.insert(std::make_pair("reversebits", desc("Reverses the order of the bits, per component.")));
+	idents.insert(std::make_pair("round", desc("Rounds x to the nearest integer")));
+	idents.insert(std::make_pair("rsqrt", desc("Returns 1 / sqrt(x)")));
+	idents.insert(std::make_pair("saturate", desc("Clamps x to the range [0, 1]")));
+	idents.insert(std::make_pair("sign", desc("Computes the sign of x.")));
+	idents.insert(std::make_pair("sin", desc("Returns the sine of x")));
+	idents.insert(std::make_pair("sincos", desc("Returns the sineand cosine of x.")));
+	idents.insert(std::make_pair("sinh", desc("Returns the hyperbolic sine of x")));
+	idents.insert(std::make_pair("smoothstep", desc("Returns a smooth Hermite interpolation between 0 and 1.")));
+	idents.insert(std::make_pair("sqrt", desc("Square root (per component)")));
+	idents.insert(std::make_pair("step", desc("Returns (x >= a) ? 1 : 0")));
+	idents.insert(std::make_pair("tan", desc("Returns the tangent of x")));
+	idents.insert(std::make_pair("tanh", desc("Returns the hyperbolic tangent of x")));
+	idents.insert(std::make_pair("tex1D", desc("1D texture lookup.")));
+	idents.insert(std::make_pair("tex1Dbias", desc("1D texture lookup with bias.")));
+	idents.insert(std::make_pair("tex1Dgrad", desc("1D texture lookup with a gradient.")));
+	idents.insert(std::make_pair("tex1Dlod", desc("1D texture lookup with LOD.")));
+	idents.insert(std::make_pair("tex1Dproj", desc("1D texture lookup with projective divide.")));
+	idents.insert(std::make_pair("tex2D", desc("2D texture lookup.")));
+	idents.insert(std::make_pair("tex2Dbias", desc("2D texture lookup with bias.")));
+	idents.insert(std::make_pair("tex2Dgrad", desc("2D texture lookup with a gradient.")));
+	idents.insert(std::make_pair("tex2Dlod", desc("2D texture lookup with LOD.")));
+	idents.insert(std::make_pair("tex2Dproj", desc("2D texture lookup with projective divide.")));
+	idents.insert(std::make_pair("tex3D", desc("3D texture lookup.")));
+	idents.insert(std::make_pair("tex3Dbias", desc("3D texture lookup with bias.")));
+	idents.insert(std::make_pair("tex3Dgrad", desc("3D texture lookup with a gradient.")));
+	idents.insert(std::make_pair("tex3Dlod", desc("3D texture lookup with LOD.")));
+	idents.insert(std::make_pair("tex3Dproj", desc("3D texture lookup with projective divide.")));
+	idents.insert(std::make_pair("texCUBE", desc("Cube texture lookup.")));
+	idents.insert(std::make_pair("texCUBEbias", desc("Cube texture lookup with bias.")));
+	idents.insert(std::make_pair("texCUBEgrad", desc("Cube texture lookup with a gradient.")));
+	idents.insert(std::make_pair("texCUBElod", desc("Cube texture lookup with LOD.")));
+	idents.insert(std::make_pair("texCUBEproj", desc("Cube texture lookup with projective divide.")));
+	idents.insert(std::make_pair("transpose", desc("Returns the transpose of the matrix m.")));
+	idents.insert(std::make_pair("trunc", desc("Truncates floating-point value(s) to integer value(s)")));
+}
 
 const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::GLSL()
 {
@@ -2463,21 +2756,18 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::GLSL()
 		static const char* const keywords[] = {
 			"auto", "break", "case", "char", "const", "continue", "default", "do", "double", "else", "enum", "extern", "float", "for", "goto", "if", "inline", "int", "long", "register", "restrict", "return", "short",
 			"signed", "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned", "void", "volatile", "while", "_Alignas", "_Alignof", "_Atomic", "_Bool", "_Complex", "_Generic", "_Imaginary",
-			"_Noreturn", "_Static_assert", "_Thread_local"
+			"_Noreturn", "_Static_assert", "_Thread_local", "attribute", "uniform", "varying", "layout", "centroid", "flat", "smooth", "noperspective", "patch", "sample", "subroutine", "in", "out", "inout",
+			"bool", "true", "false", "invariant", "mat2", "mat3", "mat4", "dmat2", "dmat3", "dmat4", "mat2x2", "mat2x3", "mat2x4", "dmat2x2", "dmat2x3", "dmat2x4", "mat3x2", "mat3x3", "mat3x4", "dmat3x2", "dmat3x3", "dmat3x4",
+			"mat4x2", "mat4x3", "mat4x4", "dmat4x2", "dmat4x3", "dmat4x4", "vec2", "vec3", "vec4", "ivec2", "ivec3", "ivec4", "bvec2", "bvec3", "bvec4", "dvec2", "dvec3", "dvec4", "uint", "uvec2", "uvec3", "uvec4",
+			"lowp", "mediump", "highp", "precision", "sampler1D", "sampler2D", "sampler3D", "samplerCube", "sampler1DShadow", "sampler2DShadow", "samplerCubeShadow", "sampler1DArray", "sampler2DArray", "sampler1DArrayShadow",
+			"sampler2DArrayShadow", "isampler1D", "isampler2D", "isampler3D", "isamplerCube", "isampler1DArray", "isampler2DArray", "usampler1D", "usampler2D", "usampler3D", "usamplerCube", "usampler1DArray", "usampler2DArray",
+			"sampler2DRect", "sampler2DRectShadow", "isampler2DRect", "usampler2DRect", "samplerBuffer", "isamplerBuffer", "usamplerBuffer", "sampler2DMS", "isampler2DMS", "usampler2DMS", "sampler2DMSArray", "isampler2DMSArray",
+			"usampler2DMSArray", "samplerCubeArray", "samplerCubeArrayShadow", "isamplerCubeArray", "usamplerCubeArray"
 		};
 		for (auto& k : keywords)
 			langDef.mKeywords.insert(k);
 
-		static const char* const identifiers[] = {
-			"abort", "abs", "acos", "asin", "atan", "atexit", "atof", "atoi", "atol", "ceil", "clock", "cosh", "ctime", "div", "exit", "fabs", "floor", "fmod", "getchar", "getenv", "isalnum", "isalpha", "isdigit", "isgraph",
-			"ispunct", "isspace", "isupper", "kbhit", "log10", "log2", "log", "memcmp", "modf", "pow", "putchar", "putenv", "puts", "rand", "remove", "rename", "sinh", "sqrt", "srand", "strcat", "strcmp", "strerror", "time", "tolower", "toupper"
-		};
-		for (auto& k : identifiers)
-		{
-			Identifier id;
-			id.mDeclaration = "Built-in function";
-			langDef.mIdentifiers.insert(std::make_pair(std::string(k), id));
-		}
+		m_GLSLDocumentation(langDef.mIdentifiers);
 
 		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("[ \\t]*#[ \\t]*[a-zA-Z_]+", PaletteIndex::Preprocessor));
 		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("L?\\\"(\\\\.|[^\\\"])*\\\"", PaletteIndex::String));
@@ -2501,6 +2791,160 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::GLSL()
 		inited = true;
 	}
 	return langDef;
+}
+void TextEditor::LanguageDefinition::m_GLSLDocumentation(Identifiers& idents)
+{
+	std::function<Identifier(const std::string&)> desc = [](const std::string & str) {
+		Identifier id;
+		id.mDeclaration = str;
+		return id;
+	};
+
+	/* SOURCE: https://docs.microsoft.com/en-us/windows/desktop/direct3dhlsl/dx-graphics-hlsl-intrinsic-functions */
+
+	idents.insert(std::make_pair("radians", desc("Converts x from degrees to radians.")));
+	idents.insert(std::make_pair("degrees", desc("Converts x from radians to degrees.")));
+	idents.insert(std::make_pair("sin", desc("Returns the sine of x")));
+	idents.insert(std::make_pair("cos", desc("Returns the cosine of x.")));
+	idents.insert(std::make_pair("tan", desc("Returns the tangent of x")));
+	idents.insert(std::make_pair("asin", desc("Returns the arcsine of each component of x.")));
+	idents.insert(std::make_pair("acos", desc("Returns the arccosine of each component of x.")));
+	idents.insert(std::make_pair("atan", desc("Returns the arctangent of x.")));
+	idents.insert(std::make_pair("sinh", desc("Returns the hyperbolic sine of x")));
+	idents.insert(std::make_pair("cosh", desc("Returns the hyperbolic cosine of x.")));
+	idents.insert(std::make_pair("tanh", desc("Returns the hyperbolic tangent of x")));
+	idents.insert(std::make_pair("asinh", desc("Returns the arc hyperbolic sine of x")));
+	idents.insert(std::make_pair("acosh", desc("Returns the arc hyperbolic cosine of x.")));
+	idents.insert(std::make_pair("atanh", desc("Returns the arc hyperbolic tangent of x")));
+	idents.insert(std::make_pair("pow", desc("Returns x^n.")));
+	idents.insert(std::make_pair("exp", desc("Returns the base-e exponent.")));
+	idents.insert(std::make_pair("exp2", desc("Base 2 exponent(per component).")));
+	idents.insert(std::make_pair("log", desc("Returns the base-e logarithm of x.")));
+	idents.insert(std::make_pair("log2", desc("Returns the base - 2 logarithm of x.")));
+	idents.insert(std::make_pair("sqrt", desc("Square root (per component).")));
+	idents.insert(std::make_pair("inversesqrt", desc("Returns rcp(sqrt(x)).")));
+	idents.insert(std::make_pair("abs", desc("Absolute value (per component).")));
+	idents.insert(std::make_pair("sign", desc("Computes the sign of x.")));
+	idents.insert(std::make_pair("floor", desc("Returns the greatest integer which is less than or equal to x.")));
+	idents.insert(std::make_pair("trunc", desc("Truncates floating-point value(s) to integer value(s)")));
+	idents.insert(std::make_pair("round", desc("Rounds x to the nearest integer")));
+	idents.insert(std::make_pair("roundEven", desc("Returns a value equal to the nearest integer to x. A fractional part of 0.5 will round toward the nearest even integer.")));
+	idents.insert(std::make_pair("ceil", desc("Returns the smallest integer which is greater than or equal to x.")));
+	idents.insert(std::make_pair("fract", desc("Returns the fractional part of x.")));
+	idents.insert(std::make_pair("mod", desc("Modulus. Returns x – y ∗ floor (x/y).")));
+	idents.insert(std::make_pair("modf", desc("Splits the value x into fractional and integer parts.")));
+	idents.insert(std::make_pair("max", desc("Selects the greater of x and y.")));
+	idents.insert(std::make_pair("min", desc("Selects the lesser of x and y.")));
+	idents.insert(std::make_pair("clamp", desc("Clamps x to the range [min, max].")));
+	idents.insert(std::make_pair("mix", desc("Returns x*(1-a)+y*a.")));
+	idents.insert(std::make_pair("isinf", desc("Returns true if x is +INF or -INF, false otherwise.")));
+	idents.insert(std::make_pair("isnan", desc("Returns true if x is NAN or QNAN, false otherwise.")));
+	idents.insert(std::make_pair("smoothstep", desc("Returns a smooth Hermite interpolation between 0 and 1.")));
+	idents.insert(std::make_pair("step", desc("Returns (x >= a) ? 1 : 0")));
+	idents.insert(std::make_pair("floatBitsToInt", desc("Returns a signed or unsigned integer value representing the encoding of a floating-point value. The floatingpoint value's bit-level representation is preserved.")));
+	idents.insert(std::make_pair("floatBitsToUint", desc("Returns a signed or unsigned integer value representing the encoding of a floating-point value. The floatingpoint value's bit-level representation is preserved.")));
+	idents.insert(std::make_pair("intBitsToFloat", desc("Returns a floating-point value corresponding to a signed or unsigned integer encoding of a floating-point value.")));
+	idents.insert(std::make_pair("uintBitsToFloat", desc("Returns a floating-point value corresponding to a signed or unsigned integer encoding of a floating-point value.")));
+	idents.insert(std::make_pair("fmod", desc("Returns the floating point remainder of x/y.")));
+	idents.insert(std::make_pair("fma", desc("Returns the double-precision fused multiply-addition of a * b + c.")));
+	idents.insert(std::make_pair("ldexp", desc("Returns x * 2exp")));
+	idents.insert(std::make_pair("packUnorm2x16", desc("First, converts each component of the normalized floating - point value v into 8 or 16bit integer values. Then, the results are packed into the returned 32bit unsigned integer.")));
+	idents.insert(std::make_pair("packUnorm4x8", desc("First, converts each component of the normalized floating - point value v into 8 or 16bit integer values. Then, the results are packed into the returned 32bit unsigned integer.")));
+	idents.insert(std::make_pair("packSnorm4x8", desc("First, converts each component of the normalized floating - point value v into 8 or 16bit integer values. Then, the results are packed into the returned 32bit unsigned integer.")));
+	idents.insert(std::make_pair("unpackUnorm2x16", desc("First, unpacks a single 32bit unsigned integer p into a pair of 16bit unsigned integers, four 8bit unsigned integers, or four 8bit signed integers.Then, each component is converted to a normalized floating point value to generate the returned two or four component vector.")));
+	idents.insert(std::make_pair("unpackUnorm4x8", desc("First, unpacks a single 32bit unsigned integer p into a pair of 16bit unsigned integers, four 8bit unsigned integers, or four 8bit signed integers.Then, each component is converted to a normalized floating point value to generate the returned two or four component vector.")));
+	idents.insert(std::make_pair("unpackSnorm4x8", desc("First, unpacks a single 32bit unsigned integer p into a pair of 16bit unsigned integers, four 8bit unsigned integers, or four 8bit signed integers.Then, each component is converted to a normalized floating point value to generate the returned two or four component vector.")));
+	idents.insert(std::make_pair("packDouble2x32", desc("Returns a double-precision value obtained by packing the components of v into a 64-bit value.")));
+	idents.insert(std::make_pair("unpackDouble2x32", desc("Returns a two-component unsigned integer vector representation of v.")));
+	idents.insert(std::make_pair("length", desc("Returns the length of the vector v.")));
+	idents.insert(std::make_pair("distance", desc("Returns the distance between two points.")));
+	idents.insert(std::make_pair("dot", desc("Returns the dot product of two vectors.")));
+	idents.insert(std::make_pair("cross", desc("Returns the cross product of two 3D vectors.")));
+	idents.insert(std::make_pair("normalize", desc("Returns a normalized vector.")));
+	idents.insert(std::make_pair("faceforward", desc("Returns -n * sign(dot(i, ng)).")));
+	idents.insert(std::make_pair("reflect", desc("Returns a reflection vector.")));
+	idents.insert(std::make_pair("refract", desc("Returns the refraction vector.")));
+	idents.insert(std::make_pair("matrixCompMult", desc("Multiply matrix x by matrix y component-wise.")));
+	idents.insert(std::make_pair("outerProduct", desc("Linear algebraic matrix multiply c * r.")));
+	idents.insert(std::make_pair("transpose", desc("Returns the transpose of the matrix m.")));
+	idents.insert(std::make_pair("determinant", desc("Returns the determinant of the square matrix m.")));
+	idents.insert(std::make_pair("inverse", desc("Returns a matrix that is the inverse of m.")));
+	idents.insert(std::make_pair("lessThan", desc("Returns the component-wise compare of x < y")));
+	idents.insert(std::make_pair("lessThanEqual", desc("Returns the component-wise compare of x <= y")));
+	idents.insert(std::make_pair("greaterThan", desc("Returns the component-wise compare of x > y")));
+	idents.insert(std::make_pair("greaterThanEqual", desc("Returns the component-wise compare of x >= y")));
+	idents.insert(std::make_pair("equal", desc("Returns the component-wise compare of x == y")));
+	idents.insert(std::make_pair("notEqual", desc("Returns the component-wise compare of x != y")));
+	idents.insert(std::make_pair("any", desc("Test if any component of x is nonzero.")));
+	idents.insert(std::make_pair("all", desc("Test if all components of x are nonzero.")));
+	idents.insert(std::make_pair("not", desc("Returns the component-wise logical complement of x.")));
+	idents.insert(std::make_pair("uaddCarry", desc("Adds 32bit unsigned integer x and y, returning the sum modulo 2^32.")));
+	idents.insert(std::make_pair("usubBorrow", desc("Subtracts the 32bit unsigned integer y from x, returning the difference if non-negatice, or 2^32 plus the difference otherwise.")));
+	idents.insert(std::make_pair("umulExtended", desc("Multiplies 32bit integers x and y, producing a 64bit result.")));
+	idents.insert(std::make_pair("imulExtended", desc("Multiplies 32bit integers x and y, producing a 64bit result.")));
+	idents.insert(std::make_pair("bitfieldExtract", desc("Extracts bits [offset, offset + bits - 1] from value, returning them in the least significant bits of the result.")));
+	idents.insert(std::make_pair("bitfieldInsert", desc("Returns the insertion the bits leas-significant bits of insert into base")));
+	idents.insert(std::make_pair("bitfieldReverse", desc("Returns the reversal of the bits of value.")));
+	idents.insert(std::make_pair("bitCount", desc("Returns the number of bits set to 1 in the binary representation of value.")));
+	idents.insert(std::make_pair("findLSB", desc("Returns the bit number of the least significant bit set to 1 in the binary representation of value.")));
+	idents.insert(std::make_pair("findMSB", desc("Returns the bit number of the most significant bit in the binary representation of value.")));
+	idents.insert(std::make_pair("textureSize", desc("Returns the dimensions of level lod  (if present) for the texture bound to sample.")));
+	idents.insert(std::make_pair("textureQueryLod", desc("Returns the mipmap array(s) that would be accessed in the x component of the return value.")));
+	idents.insert(std::make_pair("texture", desc("Use the texture coordinate P to do a texture lookup in the texture currently bound to sampler.")));
+	idents.insert(std::make_pair("textureProj", desc("Do a texture lookup with projection.")));
+	idents.insert(std::make_pair("textureLod", desc("Do a texture lookup as in texture but with explicit LOD.")));
+	idents.insert(std::make_pair("textureOffset", desc("Do a texture lookup as in texture but with offset added to the (u,v,w) texel coordinates before looking up each texel.")));
+	idents.insert(std::make_pair("texelFetch", desc("Use integer texture coordinate P to lookup a single texel from sampler.")));
+	idents.insert(std::make_pair("texelFetchOffset", desc("Fetch a single texel as in texelFetch offset by offset.")));
+	idents.insert(std::make_pair("texetureProjOffset", desc("Do a projective texture lookup as described in textureProj offset by offset as descrived in textureOffset.")));
+	idents.insert(std::make_pair("texetureLodOffset", desc("Do an offset texture lookup with explicit LOD.")));
+	idents.insert(std::make_pair("textureProjLod", desc("Do a projective texture lookup with explicit LOD.")));
+	idents.insert(std::make_pair("textureLodOffset", desc("Do an offset texture lookup with explicit LOD.")));
+	idents.insert(std::make_pair("textureProjLodOffset", desc("Do an offset projective texture lookup with explicit LOD.")));
+	idents.insert(std::make_pair("textureGrad", desc("Do a texture lookup as in texture but with explicit gradients.")));
+	idents.insert(std::make_pair("textureGradOffset", desc("Do a texture lookup with both explicit gradient and offset, as described in textureGrad and textureOffset.")));
+	idents.insert(std::make_pair("textureProjGrad", desc("Do a texture lookup both projectively and with explicit gradient.")));
+	idents.insert(std::make_pair("textureProjGradOffset", desc("Do a texture lookup both projectively and with explicit gradient as well as with offset.")));
+	idents.insert(std::make_pair("textureGather", desc("Built-in function.")));
+	idents.insert(std::make_pair("textureGatherOffset", desc("Built-in function.")));
+	idents.insert(std::make_pair("textureGatherOffsets", desc("Built-in function.")));
+	idents.insert(std::make_pair("texture1D", desc("1D texture lookup.")));
+	idents.insert(std::make_pair("texture1DLod", desc("1D texture lookup with LOD.")));
+	idents.insert(std::make_pair("texture1DProj", desc("1D texture lookup with projective divide.")));
+	idents.insert(std::make_pair("texture1DProjLod", desc("1D texture lookup with projective divide and with LOD.")));
+	idents.insert(std::make_pair("texture2D", desc("2D texture lookup.")));
+	idents.insert(std::make_pair("texture2DLod", desc("2D texture lookup with LOD.")));
+	idents.insert(std::make_pair("texture2DProj", desc("2D texture lookup with projective divide.")));
+	idents.insert(std::make_pair("texture2DProjLod", desc("2D texture lookup with projective divide and with LOD.")));
+	idents.insert(std::make_pair("texture3D", desc("3D texture lookup.")));
+	idents.insert(std::make_pair("texture3DLod", desc("3D texture lookup with LOD.")));
+	idents.insert(std::make_pair("texture3DProj", desc("3D texture lookup with projective divide.")));
+	idents.insert(std::make_pair("texture3DProjLod", desc("3D texture lookup with projective divide and with LOD.")));
+	idents.insert(std::make_pair("textureCube", desc("Cube texture lookup.")));
+	idents.insert(std::make_pair("textureCubeLod", desc("Cube texture lookup with LOD.")));
+	idents.insert(std::make_pair("shadow1D", desc("1D texture lookup.")));
+	idents.insert(std::make_pair("shadow1DLod", desc("1D texture lookup with LOD.")));
+	idents.insert(std::make_pair("shadow1DProj", desc("1D texture lookup with projective divide.")));
+	idents.insert(std::make_pair("shadow1DProjLod", desc("1D texture lookup with projective divide and with LOD.")));
+	idents.insert(std::make_pair("shadow2D", desc("2D texture lookup.")));
+	idents.insert(std::make_pair("shadow2DLod", desc("2D texture lookup with LOD.")));
+	idents.insert(std::make_pair("shadow2DProj", desc("2D texture lookup with projective divide.")));
+	idents.insert(std::make_pair("shadow2DProjLod", desc("2D texture lookup with projective divide and with LOD.")));
+	idents.insert(std::make_pair("dFdx", desc("Returns the partial derivative of x with respect to the screen-space x-coordinate.")));
+	idents.insert(std::make_pair("dFdy", desc("Returns the partial derivative of x with respect to the screen-space y-coordinate.")));
+	idents.insert(std::make_pair("fwidth", desc("Returns abs(ddx(x)) + abs(ddy(x))")));
+	idents.insert(std::make_pair("interpolateAtCentroid", desc("Return the value of the input varying interpolant sampled at a location inside the both the pixel and the primitive being processed.")));
+	idents.insert(std::make_pair("interpolateAtSample", desc("Return the value of the input varying interpolant at the location of sample number sample.")));
+	idents.insert(std::make_pair("interpolateAtOffset", desc("Return the value of the input varying interpolant sampled at an offset from the center of the pixel specified by offset.")));
+	idents.insert(std::make_pair("noise1", desc("Generates a random value")));
+	idents.insert(std::make_pair("noise2", desc("Generates a random value")));
+	idents.insert(std::make_pair("noise3", desc("Generates a random value")));
+	idents.insert(std::make_pair("noise4", desc("Generates a random value")));
+	idents.insert(std::make_pair("EmitStreamVertex", desc("Emit the current values of output variables to the current output primitive on stream stream.")));
+	idents.insert(std::make_pair("EndStreamPrimitive", desc("Completes the current output primitive on stream stream and starts a new one.")));
+	idents.insert(std::make_pair("EmitVertex", desc("Emit the current values to the current output primitive.")));
+	idents.insert(std::make_pair("EndPrimitive", desc("Completes the current output primitive and starts a new one.")));
+	idents.insert(std::make_pair("barrier", desc("For any given static instance of barrier(), all tessellation control shader invocations for a single input patch must enter it before any will be allowed to continue beyond it.")));
 }
 
 const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::C()
@@ -2528,7 +2972,7 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::C()
 			langDef.mIdentifiers.insert(std::make_pair(std::string(k), id));
 		}
 
-		langDef.mTokenize = [](const char * in_begin, const char * in_end, const char *& out_begin, const char *& out_end, PaletteIndex & paletteIndex) -> bool
+		langDef.mTokenize = [](const char* in_begin, const char* in_end, const char*& out_begin, const char*& out_end, PaletteIndex & paletteIndex) -> bool
 		{
 			paletteIndex = PaletteIndex::Max;
 
@@ -2558,7 +3002,7 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::C()
 		langDef.mCommentStart = "/*";
 		langDef.mCommentEnd = "*/";
 		langDef.mSingleLineComment = "//";
-
+		
 		langDef.mCaseSensitive = true;
 		langDef.mAutoIndentation = true;
 
@@ -2698,9 +3142,9 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::Lua()
 
 		static const char* const identifiers[] = {
 			"assert", "collectgarbage", "dofile", "error", "getmetatable", "ipairs", "loadfile", "load", "loadstring",  "next",  "pairs",  "pcall",  "print",  "rawequal",  "rawlen",  "rawget",  "rawset",
-			"select",  "setmetatable",  "tonumber",  "tostring",  "type",  "xpcall",  "_G",  "_VERSION","arshift", "band", "bnot", "bor", "bxor", "btest", "extract", "lrotate", "lshift", "replace",
-			"rrotate", "rshift", "create", "resume", "running", "status", "wrap", "yield", "isyieldable", "debug","getuservalue", "gethook", "getinfo", "getlocal", "getregistry", "getmetatable",
-			"getupvalue", "upvaluejoin", "upvalueid", "setuservalue", "sethook", "setlocal", "setmetatable", "setupvalue", "traceback", "close", "flush", "input", "lines", "open", "output", "popen",
+			"select",  "setmetatable",  "tonumber",  "tostring",  "type",  "xpcall",  "_G",  "_VERSION","arshift", "band", "bnot", "bor", "bxor", "btest", "extract", "lrotate", "lshift", "replace", 
+			"rrotate", "rshift", "create", "resume", "running", "status", "wrap", "yield", "isyieldable", "debug","getuservalue", "gethook", "getinfo", "getlocal", "getregistry", "getmetatable", 
+			"getupvalue", "upvaluejoin", "upvalueid", "setuservalue", "sethook", "setlocal", "setmetatable", "setupvalue", "traceback", "close", "flush", "input", "lines", "open", "output", "popen", 
 			"read", "tmpfile", "type", "write", "close", "flush", "lines", "read", "seek", "setvbuf", "write", "__gc", "__tostring", "abs", "acos", "asin", "atan", "ceil", "cos", "deg", "exp", "tointeger",
 			"floor", "fmod", "ult", "log", "max", "min", "modf", "rad", "random", "randomseed", "sin", "sqrt", "string", "tan", "type", "atan2", "cosh", "sinh", "tanh",
 			 "pow", "frexp", "ldexp", "log10", "pi", "huge", "maxinteger", "mininteger", "loadlib", "searchpath", "seeall", "preload", "cpath", "path", "searchers", "loaded", "module", "require", "clock",
