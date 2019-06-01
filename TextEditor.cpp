@@ -915,16 +915,6 @@ void TextEditor::Render()
 		}
 	}
 
-
-	ImGui::Dummy(ImVec2((longest + 2), mLines.size() * mCharAdvance.y));
-
-	if (mScrollToCursor)
-	{
-		EnsureCursorVisible();
-		ImGui::SetWindowFocus();
-		mScrollToCursor = false;
-	}
-
 	// suggestions window
 	if (mACOpened) {
 		auto acCoord = mACPosition;
@@ -952,6 +942,15 @@ void TextEditor::Render()
 		if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Escape)))
 			mACOpened = false;
 	}
+
+	ImGui::Dummy(ImVec2((longest + 2), mLines.size() * mCharAdvance.y));
+
+	if (mScrollToCursor)
+	{
+		EnsureCursorVisible();
+		ImGui::SetWindowFocus();
+		mScrollToCursor = false;
+	}
 }
 
 ImVec2 TextEditor::CoordinatesToScreenPos(const TextEditor::Coordinates& aPosition) const
@@ -966,7 +965,6 @@ ImVec2 TextEditor::CoordinatesToScreenPos(const TextEditor::Coordinates& aPositi
 		else dist++;
 	}
 
-
 	int retY = origin.y + aPosition.mLine * mCharAdvance.y;
 	int retX = origin.x + GetTextStart() * mCharAdvance.x + dist * mCharAdvance.x - ImGui::GetScrollX();
 
@@ -976,13 +974,14 @@ ImVec2 TextEditor::CoordinatesToScreenPos(const TextEditor::Coordinates& aPositi
 void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 {
 	mWithinRender = true;
-	mTextChanged = false;
 	mCursorPositionChanged = false;
 
 	ImGui::PushStyleColor(ImGuiCol_ChildWindowBg, ImGui::ColorConvertU32ToFloat4(mPalette[(int)PaletteIndex::Background]));
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
 	ImGui::BeginChild(aTitle, aSize, aBorder, (ImGuiWindowFlags_HorizontalScrollbar * mHorizontalScroll) | ImGuiWindowFlags_NoMove);
 	ImGui::PushAllowKeyboardFocus(true);
+
+	mFocused = ImGui::IsWindowFocused();
 
 	HandleKeyboardInputs();
 	HandleMouseInputs();
