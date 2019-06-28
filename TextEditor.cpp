@@ -1754,14 +1754,14 @@ bool TextEditor::HasSelection() const
 }
 
 void TextEditor::SetShortcut(TextEditor::ShortcutID id, Shortcut s) {
-	m_shortcuts[id].Key1 = s.Key1;
-	m_shortcuts[id].Key2 = s.Key2;
-	if (m_shortcuts[id].Ctrl != 2)
-		m_shortcuts[id].Ctrl = s.Ctrl;
-	if (m_shortcuts[id].Shift != 2)
-		m_shortcuts[id].Shift = s.Shift;
-	if (m_shortcuts[id].Alt != 2)
-		m_shortcuts[id].Alt = s.Alt;
+	m_shortcuts[(int)id].Key1 = s.Key1;
+	m_shortcuts[(int)id].Key2 = s.Key2;
+	if (m_shortcuts[(int)id].Ctrl != 2)
+		m_shortcuts[(int)id].Ctrl = s.Ctrl;
+	if (m_shortcuts[(int)id].Shift != 2)
+		m_shortcuts[(int)id].Shift = s.Shift;
+	if (m_shortcuts[(int)id].Alt != 2)
+		m_shortcuts[(int)id].Alt = s.Alt;
 }
 
 void TextEditor::Copy()
