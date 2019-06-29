@@ -584,12 +584,12 @@ void TextEditor::HandleKeyboardInputs()
 				case ShortcutID::MoveStartLine: MoveHome(shift); break;
 				case ShortcutID::ForwardDelete:
 					if (ctrl)
-						MoveRight(1, true, true);
+						MoveRight(1, true, true, true);
 					Delete();
 				break;
 				case ShortcutID::BackwardDelete:
 					if (ctrl)
-						MoveLeft(1, true, true);
+						MoveLeft(1, true, true, true);
 					BackSpace();
 				break;
 				case ShortcutID::OverwriteCursor: mOverwrite ^= true; break;
@@ -993,7 +993,7 @@ void TextEditor::Render()
 		ImGui::PopFont();
 
 		ImGui::SetNextWindowPos(CoordinatesToScreenPos(acCoord), ImGuiCond_Always);
-		ImGui::PushStyleColor(ImGuiCol_ChildWindowBg, ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
+		ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
 		ImGui::BeginChild("##texteditor_autocompl", ImVec2(150, 100), true);
 
 		for (int i = 0; i < mACSuggestions.size(); i++) {
@@ -1045,7 +1045,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 	mWithinRender = true;
 	mCursorPositionChanged = false;
 
-	ImGui::PushStyleColor(ImGuiCol_ChildWindowBg, ImGui::ColorConvertU32ToFloat4(mPalette[(int)PaletteIndex::Background]));
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(mPalette[(int)PaletteIndex::Background]));
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
 	ImGui::BeginChild(aTitle, aSize, aBorder, (ImGuiWindowFlags_HorizontalScrollbar * mHorizontalScroll) | ImGuiWindowFlags_NoMove);
 	ImGui::PushAllowKeyboardFocus(true);
@@ -1432,7 +1432,7 @@ void TextEditor::MoveDown(int aAmount, bool aSelect)
 	}
 }
 
-void TextEditor::MoveLeft(int aAmount, bool aSelect, bool aWordMode)
+void TextEditor::MoveLeft(int aAmount, bool aSelect, bool aWordMode, bool aDelete)
 {
 	if (mLines.empty())
 		return;
@@ -1461,10 +1461,12 @@ void TextEditor::MoveLeft(int aAmount, bool aSelect, bool aWordMode)
 	assert(mState.mCursorPosition.mColumn >= 0);
 	if (aSelect)
 	{
-		if (oldPos == mInteractiveStart)
+		if (oldPos == mInteractiveStart) {
+			if (aDelete) mInteractiveEnd = mInteractiveStart;
 			mInteractiveStart = mState.mCursorPosition;
+		}
 		else if (oldPos == mInteractiveEnd)
-			mInteractiveEnd = mState.mCursorPosition;
+			mInteractiveEnd = oldPos;
 		else
 		{
 			mInteractiveStart = mState.mCursorPosition;
@@ -1473,12 +1475,12 @@ void TextEditor::MoveLeft(int aAmount, bool aSelect, bool aWordMode)
 	}
 	else
 		mInteractiveStart = mInteractiveEnd = mState.mCursorPosition;
-	SetSelection(mInteractiveStart, mInteractiveEnd, aSelect && aWordMode ? SelectionMode::Word : SelectionMode::Normal);
+	SetSelection(mInteractiveStart, mInteractiveEnd, SelectionMode::Normal);
 
 	EnsureCursorVisible();
 }
 
-void TextEditor::MoveRight(int aAmount, bool aSelect, bool aWordMode)
+void TextEditor::MoveRight(int aAmount, bool aSelect, bool aWordMode, bool aDelete)
 {
 	auto oldPos = mState.mCursorPosition;
 
@@ -1506,8 +1508,10 @@ void TextEditor::MoveRight(int aAmount, bool aSelect, bool aWordMode)
 
 	if (aSelect)
 	{
-		if (oldPos == mInteractiveEnd)
+		if (oldPos == mInteractiveEnd) {
+			if (aDelete) mInteractiveStart = mInteractiveEnd;
 			mInteractiveEnd = SanitizeCoordinates(mState.mCursorPosition);
+		}
 		else if (oldPos == mInteractiveStart)
 			mInteractiveStart = mState.mCursorPosition;
 		else
@@ -1518,7 +1522,7 @@ void TextEditor::MoveRight(int aAmount, bool aSelect, bool aWordMode)
 	}
 	else
 		mInteractiveStart = mInteractiveEnd = mState.mCursorPosition;
-	SetSelection(mInteractiveStart, mInteractiveEnd, aSelect && aWordMode ? SelectionMode::Word : SelectionMode::Normal);
+	SetSelection(mInteractiveStart, mInteractiveEnd, SelectionMode::Normal);
 
 	EnsureCursorVisible();
 }

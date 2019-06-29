@@ -265,8 +265,8 @@ public:
 
 	void MoveUp(int aAmount = 1, bool aSelect = false);
 	void MoveDown(int aAmount = 1, bool aSelect = false);
-	void MoveLeft(int aAmount = 1, bool aSelect = false, bool aWordMode = false);
-	void MoveRight(int aAmount = 1, bool aSelect = false, bool aWordMode = false);
+	void MoveLeft(int aAmount = 1, bool aSelect = false, bool aWordMode = false, bool aDelete = false);
+	void MoveRight(int aAmount = 1, bool aSelect = false, bool aWordMode = false, bool aDelete = false);
 	void MoveTop(bool aSelect = false);
 	void MoveBottom(bool aSelect = false);
 	void MoveHome(bool aSelect = false);
