@@ -1,4 +1,5 @@
-#include <Windows.h>
+#include <SDL2/SDL_events.h>
+#include <SDL2/SDL_keyboard.h>
 #include <algorithm>
 #include <functional>
 #include <chrono>
@@ -63,32 +64,32 @@ TextEditor::TextEditor()
 	mLines.push_back(Line());
 
 	m_shortcuts.resize((int)TextEditor::ShortcutID::Count);
-	m_shortcuts[(int)TextEditor::ShortcutID::Undo] = TextEditor::Shortcut('Z', -1, 0, 1, 0); // CTRL+Z
-	m_shortcuts[(int)TextEditor::ShortcutID::Redo] = TextEditor::Shortcut('Y', -1, 0, 1, 0); // CTRL+Y
-	m_shortcuts[(int)TextEditor::ShortcutID::MoveUp] = TextEditor::Shortcut(VK_UP, -1, 0, 0, 2); // UP ARROW (+ SHIFT)
-	m_shortcuts[(int)TextEditor::ShortcutID::MoveDown] = TextEditor::Shortcut(VK_DOWN, -1, 0, 0, 2); // DOWN ARROW (+ SHIFT)
-	m_shortcuts[(int)TextEditor::ShortcutID::MoveLeft] = TextEditor::Shortcut(VK_LEFT, -1, 0, 2, 2); // LEFT ARROW (+ SHIFT/CTRL)
-	m_shortcuts[(int)TextEditor::ShortcutID::MoveRight] = TextEditor::Shortcut(VK_RIGHT, -1, 0, 2, 2); // RIGHT ARROW (+ SHIFT/CTRL)
-	m_shortcuts[(int)TextEditor::ShortcutID::MoveUpBlock] = TextEditor::Shortcut(VK_PRIOR, -1, 0, 0, 2); // PAGE UP (+ SHIFT)
-	m_shortcuts[(int)TextEditor::ShortcutID::MoveDownBlock] = TextEditor::Shortcut(VK_NEXT, -1, 0, 0, 2); // PAGE UP (+ SHIFT)
-	m_shortcuts[(int)TextEditor::ShortcutID::MoveTop] = TextEditor::Shortcut(VK_HOME, -1, 1, 0, 2); // CTRL + HOME (+ SHIFT)
-	m_shortcuts[(int)TextEditor::ShortcutID::MoveBottom] = TextEditor::Shortcut(VK_END, -1, 1, 0, 2); // CTRL + END (+ SHIFT)
-	m_shortcuts[(int)TextEditor::ShortcutID::MoveStartLine] = TextEditor::Shortcut(VK_HOME, -1, 0, 0, 2); // HOME (+ SHIFT)
-	m_shortcuts[(int)TextEditor::ShortcutID::MoveEndLine] = TextEditor::Shortcut(VK_END, -1, 0, 0, 2); // END (+ SHIFT)
-	m_shortcuts[(int)TextEditor::ShortcutID::ForwardDelete] = TextEditor::Shortcut(VK_DELETE, -1, 0, 2, 0); // CTRL + DELETE
-	m_shortcuts[(int)TextEditor::ShortcutID::BackwardDelete] = TextEditor::Shortcut(VK_BACK, -1, 0, 2, 0); // CTRL + BACKSPACE
-	m_shortcuts[(int)TextEditor::ShortcutID::OverwriteCursor] = TextEditor::Shortcut(VK_INSERT, -1, 0, 0, 0); // INSERT
-	m_shortcuts[(int)TextEditor::ShortcutID::Copy] = TextEditor::Shortcut('C', -1, 0, 1, 0); // CTRL+C
-	m_shortcuts[(int)TextEditor::ShortcutID::Paste] = TextEditor::Shortcut('V', -1, 0, 1, 0); // CTRL+V
-	m_shortcuts[(int)TextEditor::ShortcutID::Cut] = TextEditor::Shortcut('X', -1, 0, 1, 0); // CTRL+X
-	m_shortcuts[(int)TextEditor::ShortcutID::SelectAll] = TextEditor::Shortcut('A', -1, 0, 1, 0); // CTRL+A
-	m_shortcuts[(int)TextEditor::ShortcutID::AutocompleteOpen] = TextEditor::Shortcut(VK_SPACE, -1, 0, 1, 0); // CTRL+SPACE
-	m_shortcuts[(int)TextEditor::ShortcutID::AutocompleteSelect] = TextEditor::Shortcut(VK_TAB, -1, 0, 0, 0); // TAB
-	m_shortcuts[(int)TextEditor::ShortcutID::AutocompleteSelectActive] = TextEditor::Shortcut(VK_RETURN, -1, 0, 0, 0); // RETURN
-	m_shortcuts[(int)TextEditor::ShortcutID::AutocompleteUp] = TextEditor::Shortcut(VK_UP, -1, 0, 0, 0); // UP ARROW
-	m_shortcuts[(int)TextEditor::ShortcutID::AutocompleteDown] = TextEditor::Shortcut(VK_DOWN, -1, 0, 0, 2); // DOWN ARROW
-	m_shortcuts[(int)TextEditor::ShortcutID::NewLine] = TextEditor::Shortcut(VK_RETURN, -1, 0, 0, 0); // RETURN
-	m_shortcuts[(int)TextEditor::ShortcutID::IndentShift] = TextEditor::Shortcut(VK_TAB, -1, 0, 0, 2); // TAB
+	m_shortcuts[(int)TextEditor::ShortcutID::Undo] = TextEditor::Shortcut(SDLK_z, -1, 0, 1, 0); // CTRL+Z
+	m_shortcuts[(int)TextEditor::ShortcutID::Redo] = TextEditor::Shortcut(SDLK_y, -1, 0, 1, 0); // CTRL+Y
+	m_shortcuts[(int)TextEditor::ShortcutID::MoveUp] = TextEditor::Shortcut(SDLK_UP, -1, 0, 0, 2); // UP ARROW (+ SHIFT)
+	m_shortcuts[(int)TextEditor::ShortcutID::MoveDown] = TextEditor::Shortcut(SDLK_DOWN, -1, 0, 0, 2); // DOWN ARROW (+ SHIFT)
+	m_shortcuts[(int)TextEditor::ShortcutID::MoveLeft] = TextEditor::Shortcut(SDLK_LEFT, -1, 0, 2, 2); // LEFT ARROW (+ SHIFT/CTRL)
+	m_shortcuts[(int)TextEditor::ShortcutID::MoveRight] = TextEditor::Shortcut(SDLK_RIGHT, -1, 0, 2, 2); // RIGHT ARROW (+ SHIFT/CTRL)
+	m_shortcuts[(int)TextEditor::ShortcutID::MoveUpBlock] = TextEditor::Shortcut(SDLK_PAGEUP, -1, 0, 0, 2); // PAGE UP (+ SHIFT)
+	m_shortcuts[(int)TextEditor::ShortcutID::MoveDownBlock] = TextEditor::Shortcut(SDLK_PAGEDOWN, -1, 0, 0, 2); // PAGE DOWN (+ SHIFT)
+	m_shortcuts[(int)TextEditor::ShortcutID::MoveTop] = TextEditor::Shortcut(SDLK_HOME, -1, 1, 0, 2); // CTRL + HOME (+ SHIFT)
+	m_shortcuts[(int)TextEditor::ShortcutID::MoveBottom] = TextEditor::Shortcut(SDLK_END, -1, 1, 0, 2); // CTRL + END (+ SHIFT)
+	m_shortcuts[(int)TextEditor::ShortcutID::MoveStartLine] = TextEditor::Shortcut(SDLK_HOME, -1, 0, 0, 2); // HOME (+ SHIFT)
+	m_shortcuts[(int)TextEditor::ShortcutID::MoveEndLine] = TextEditor::Shortcut(SDLK_END, -1, 0, 0, 2); // END (+ SHIFT)
+	m_shortcuts[(int)TextEditor::ShortcutID::ForwardDelete] = TextEditor::Shortcut(SDLK_DELETE, -1, 0, 2, 0); // CTRL + DELETE
+	m_shortcuts[(int)TextEditor::ShortcutID::BackwardDelete] = TextEditor::Shortcut(SDLK_BACKSPACE, -1, 0, 2, 0); // CTRL + BACKSPACE
+	m_shortcuts[(int)TextEditor::ShortcutID::OverwriteCursor] = TextEditor::Shortcut(SDLK_INSERT, -1, 0, 0, 0); // INSERT
+	m_shortcuts[(int)TextEditor::ShortcutID::Copy] = TextEditor::Shortcut(SDLK_c, -1, 0, 1, 0); // CTRL+C
+	m_shortcuts[(int)TextEditor::ShortcutID::Paste] = TextEditor::Shortcut(SDLK_v, -1, 0, 1, 0); // CTRL+V
+	m_shortcuts[(int)TextEditor::ShortcutID::Cut] = TextEditor::Shortcut(SDLK_x, -1, 0, 1, 0); // CTRL+X
+	m_shortcuts[(int)TextEditor::ShortcutID::SelectAll] = TextEditor::Shortcut(SDLK_a, -1, 0, 1, 0); // CTRL+A
+	m_shortcuts[(int)TextEditor::ShortcutID::AutocompleteOpen] = TextEditor::Shortcut(SDLK_SPACE, -1, 0, 1, 0); // CTRL+SPACE
+	m_shortcuts[(int)TextEditor::ShortcutID::AutocompleteSelect] = TextEditor::Shortcut(SDLK_TAB, -1, 0, 0, 0); // TAB
+	m_shortcuts[(int)TextEditor::ShortcutID::AutocompleteSelectActive] = TextEditor::Shortcut(SDLK_RETURN, -1, 0, 0, 0); // RETURN
+	m_shortcuts[(int)TextEditor::ShortcutID::AutocompleteUp] = TextEditor::Shortcut(SDLK_UP, -1, 0, 0, 0); // UP ARROW
+	m_shortcuts[(int)TextEditor::ShortcutID::AutocompleteDown] = TextEditor::Shortcut(SDLK_DOWN, -1, 0, 0, 2); // DOWN ARROW
+	m_shortcuts[(int)TextEditor::ShortcutID::NewLine] = TextEditor::Shortcut(SDLK_RETURN, -1, 0, 0, 0); // RETURN
+	m_shortcuts[(int)TextEditor::ShortcutID::IndentShift] = TextEditor::Shortcut(SDLK_TAB, -1, 0, 0, 2); // TAB
 }
 
 TextEditor::~TextEditor()
@@ -522,7 +523,9 @@ void TextEditor::HandleKeyboardInputs()
 			ShortcutID curActionID = ShortcutID::Count;
 			bool additionalChecks = true;
 
-			if (ImGui::IsKeyPressed(sct.Key1) && ((sct.Key2 != -1 && ImGui::IsKeyPressed(sct.Key2)) || sct.Key2 == -1)) {
+			SDL_Scancode sc1 = SDL_GetScancodeFromKey(sct.Key1);
+
+			if (ImGui::IsKeyPressed(sc1) && ((sct.Key2 != -1 && ImGui::IsKeyPressed(SDL_GetScancodeFromKey(sct.Key2))) || sct.Key2 == -1)) {
 				if (((sct.Ctrl == 0 && !ctrl) || (sct.Ctrl == 1 && ctrl) || (sct.Ctrl == 2)) &&		// ctrl check
 					((sct.Alt == 0 && !alt) || (sct.Alt == 1 && alt) || (sct.Alt == 2)) &&			// alt check
 					((sct.Shift == 0 && !shift) || (sct.Shift == 1 && shift) || (sct.Shift == 2))) {// shift check
@@ -674,7 +677,7 @@ void TextEditor::HandleKeyboardInputs()
 					EnterCharacter('\t', shift);
 				break;
 			}
-		} else if (!IsReadOnly() && !ctrl && !alt) {
+		} else if (!IsReadOnly()) {
 			for (int i = 0; i < io.InputQueueCharacters.Size; i++)
 			{
 				auto c = (unsigned char)io.InputQueueCharacters[i];
