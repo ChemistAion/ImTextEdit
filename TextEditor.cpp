@@ -849,7 +849,6 @@ void TextEditor::HandleKeyboardInputs()
 				case ShortcutID::AutocompleteOpen: 
 				{
 					mACWord = GetWordUnderCursor();
-					printf("test: %s\n", mACWord.c_str());
 
 					bool isValid = false;
 					for (int i = 0; i < mACWord.size(); i++)
