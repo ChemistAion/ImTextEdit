@@ -1116,11 +1116,11 @@ void TextEditor::Render()
 				if (ImGui::IsMouseHoveringRect(lineStartScreenPos, end))
 				{
 					ImGui::BeginTooltip();
-					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+					ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(mPalette[(int)PaletteIndex::ErrorMessage]));
 					ImGui::Text("Error at line %d:", errorIt->first);
 					ImGui::PopStyleColor();
 					ImGui::Separator();
-					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.2f, 1.0f));
+					ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(mPalette[(int)PaletteIndex::ErrorMessage]));
 					ImGui::Text("%s", errorIt->second.c_str());
 					ImGui::PopStyleColor();
 					ImGui::EndTooltip();
@@ -2277,6 +2277,7 @@ const TextEditor::Palette & TextEditor::GetDarkPalette()
 		0x40000000, // Current line fill
 		0x40808080, // Current line fill (inactive)
 		0x40a0a0a0, // Current line edge
+		0xff33ffff, // Error message
 	} };
 	return p;
 }
@@ -2305,6 +2306,7 @@ const TextEditor::Palette & TextEditor::GetLightPalette()
 		0x40000000, // Current line fill
 		0x40808080, // Current line fill (inactive)
 		0x40000000, // Current line edge
+		0xff3333ff, // Error message
 	} };
 	return p;
 }
@@ -2333,6 +2335,7 @@ const TextEditor::Palette & TextEditor::GetRetroBluePalette()
 		0x40000000, // Current line fill
 		0x40808080, // Current line fill (inactive)
 		0x40000000, // Current line edge
+		0xffffff00, // Error message
 	} };
 	return p;
 }
