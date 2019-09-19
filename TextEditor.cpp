@@ -1480,7 +1480,11 @@ void TextEditor::EnterCharacter(ImWchar aChar, bool aShift)
 				}
 				else
 				{
-					line.insert(line.begin(), Glyph('\t', TextEditor::PaletteIndex::Background));
+					if (mInsertSpaces) {
+						for (int i = 0; i < mTabSize; i++)
+							line.insert(line.begin(), Glyph(' ', TextEditor::PaletteIndex::Background));
+					} else
+						line.insert(line.begin(), Glyph('\t', TextEditor::PaletteIndex::Background));
 					modified = true;
 				}
 			}
@@ -1555,7 +1559,13 @@ void TextEditor::EnterCharacter(ImWchar aChar, bool aShift)
 		int e = ImTextCharToUtf8(buf, 7, aChar);
 		if (e > 0)
 		{
+			if (mInsertSpaces && e == 1 && buf[0] == '\t') {
+				for (int i = 0; i < mTabSize; i++)
+					buf[i] = ' ';
+				e = mTabSize;
+			}
 			buf[e] = '\0';
+
 			auto& line = mLines[coord.mLine];
 			auto cindex = GetCharacterIndex(coord);
 
