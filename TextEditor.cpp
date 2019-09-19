@@ -833,7 +833,7 @@ void TextEditor::HandleKeyboardInputs()
 				case ShortcutID::MoveStartLine: MoveHome(shift); break;
 				case ShortcutID::ForwardDelete:
 					if (ctrl)
-						MoveRight(1, true, true); // MAYBE: add aDelete argument
+						MoveRight(1, true, true);
 					Delete();
 				break;
 				case ShortcutID::BackwardDelete:
@@ -1833,6 +1833,9 @@ void TextEditor::MoveLeft(int aAmount, bool aSelect, bool aWordMode)
 	assert(mState.mCursorPosition.mColumn >= 0);
 	if (aSelect)
 	{
+		mInteractiveStart = mState.mSelectionStart;
+		mInteractiveEnd = mState.mSelectionEnd;
+
 		if (oldPos == mInteractiveStart)
 			mInteractiveStart = mState.mCursorPosition;
 		else if (oldPos == mInteractiveEnd)
@@ -1845,7 +1848,7 @@ void TextEditor::MoveLeft(int aAmount, bool aSelect, bool aWordMode)
 	}
 	else
 		mInteractiveStart = mInteractiveEnd = mState.mCursorPosition;
-	SetSelection(mInteractiveStart, mInteractiveEnd, aSelect && aWordMode ? SelectionMode::Word : SelectionMode::Normal);
+	SetSelection(mInteractiveStart, mInteractiveEnd, SelectionMode::Normal);
 
 	EnsureCursorVisible();
 }
@@ -1887,6 +1890,9 @@ void TextEditor::MoveRight(int aAmount, bool aSelect, bool aWordMode)
 
 	if (aSelect)
 	{
+		mInteractiveStart = mState.mSelectionStart;
+		mInteractiveEnd = mState.mSelectionEnd;
+
 		if (oldPos == mInteractiveEnd)
 			mInteractiveEnd = mState.mCursorPosition;
 		else if (oldPos == mInteractiveStart)
@@ -1899,7 +1905,7 @@ void TextEditor::MoveRight(int aAmount, bool aSelect, bool aWordMode)
 	}
 	else
 		mInteractiveStart = mInteractiveEnd = mState.mCursorPosition;
-	SetSelection(mInteractiveStart, mInteractiveEnd, aSelect && aWordMode ? SelectionMode::Word : SelectionMode::Normal);
+	SetSelection(mInteractiveStart, mInteractiveEnd, SelectionMode::Normal);
 
 	EnsureCursorVisible();
 }
