@@ -69,6 +69,7 @@ public:
 		AutocompleteDown,			// DOWN ARROW
 		NewLine,					// ENTER
 		IndentShift,				// (SHIFT+)TAB 
+		Find,						// CTRL+F
 		Count						// how many shortcuts are there?
 	};
 	
@@ -415,13 +416,16 @@ private:
 
 	void HandleKeyboardInputs();
 	void HandleMouseInputs();
-	void Render();
+	void RenderInternal(const char* aTitle);
 
 	float mLineSpacing;
 	Lines mLines;
 	EditorState mState;
 	UndoBuffer mUndoBuffer;
 	int mUndoIndex;
+
+	char mFindWord[256];
+	bool mFindOpened;
 
 	bool mAutocomplete;
 	std::string mACWord;
