@@ -70,6 +70,7 @@ TextEditor::TextEditor()
 
 	memset(mFindWord, 0, 256 * sizeof(char));
 	mFindOpened = false;
+	mFindJustOpened = false;
 
 	SetPalette(GetDarkPalette());
 	SetLanguageDefinition(LanguageDefinition::HLSL());
@@ -928,7 +929,7 @@ void TextEditor::HandleKeyboardInputs()
 				case ShortcutID::IndentShift:
 					EnterCharacter('\t', shift);
 				break;
-				case ShortcutID::Find: mFindOpened = true; break;
+				case ShortcutID::Find: mFindOpened = true; mFindJustOpened = true; break;
 			}
 		} else if (!IsReadOnly()) {
 			for (int i = 0; i < io.InputQueueCharacters.Size; i++)
@@ -1409,6 +1410,11 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 				ImGui::SetKeyboardFocusHere(0);
 			}
 		}
+		if (mFindJustOpened) {
+			ImGui::SetKeyboardFocusHere(0);
+			mFindJustOpened = false;
+		}
+		
 		ImGui::PopItemWidth();
 		ImGui::SameLine();
 		if (ImGui::Button(("X##" + std::string(aTitle)).c_str()))

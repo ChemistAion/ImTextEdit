@@ -426,6 +426,7 @@ private:
 
 	char mFindWord[256];
 	bool mFindOpened;
+	bool mFindJustOpened;
 
 	bool mAutocomplete;
 	std::string mACWord;
