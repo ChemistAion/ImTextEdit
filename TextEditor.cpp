@@ -1026,6 +1026,7 @@ void TextEditor::HandleMouseInputs()
 				mState.mCursorPosition = mInteractiveEnd = ScreenPosToCoordinates(ImGui::GetMousePos());
 				SetSelection(mInteractiveStart, mInteractiveEnd, mSelectionMode);
 			}
+
 		}
 	}
 }
@@ -1361,6 +1362,12 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 	ColorizeInternal();
 	RenderInternal(aTitle);
 
+	if (ImGui::BeginPopupContextItem(("##edcontext" + std::string(aTitle)).c_str())) {
+		if (ImGui::Selectable("Cut")) { Cut(); }
+		if (ImGui::Selectable("Copy")) { Copy(); }
+		if (ImGui::Selectable("Paste")) { Paste(); }
+		ImGui::EndPopup();
+	}
 
 	/* FIND TEXT WINDOW */
 	if (mFindOpened)
