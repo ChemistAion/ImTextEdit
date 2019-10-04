@@ -155,9 +155,9 @@ std::string TextEditor::GetText(const Coordinates & aStart, const Coordinates & 
 		else
 		{
 			istart = 0;
-			++lstart;
-			if (lstart < lend)
+			if (!(lstart == lend-1 && iend == -1))
 				result += '\n';
+			++lstart;
 		}
 	}
 
