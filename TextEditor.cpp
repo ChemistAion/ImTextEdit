@@ -73,6 +73,8 @@ TextEditor::TextEditor()
 	mFindOpened = false;
 	mReplaceOpened = false;
 	mFindJustOpened = false;
+	mFindFocused = false;
+	mReplaceFocused = false;
 
 	SetPalette(GetDarkPalette());
 	SetLanguageDefinition(LanguageDefinition::HLSL());
@@ -107,6 +109,7 @@ TextEditor::TextEditor()
 	m_shortcuts[(int)TextEditor::ShortcutID::IndentShift] = TextEditor::Shortcut(SDLK_TAB, -1, 0, 0, 2); // TAB
 	m_shortcuts[(int)TextEditor::ShortcutID::Find] = TextEditor::Shortcut(SDLK_f, -1, 0, 0, 1); // CTRL+F
 	m_shortcuts[(int)TextEditor::ShortcutID::Replace] = TextEditor::Shortcut(SDLK_h, -1, 0, 0, 1); // CTRL+H
+	m_shortcuts[(int)TextEditor::ShortcutID::FindNext] = TextEditor::Shortcut(SDLK_F3, -1, 0, 0, 0); // F3
 }
 
 TextEditor::~TextEditor()
@@ -1050,7 +1053,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 	}
 
 	assert(mLineBuffer.empty());
-	mFocused = ImGui::IsWindowFocused();
+	mFocused = ImGui::IsWindowFocused() || mFindFocused || mReplaceFocused;
 
 	auto contentSize = ImGui::GetWindowContentRegionMax();
 	auto drawList = ImGui::GetWindowDrawList();
@@ -1383,9 +1386,40 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 
 		ImGui::SetNextWindowPos(ImVec2(findOrigin.x + windowWidth - 250, findOrigin.y), ImGuiCond_Always);
 		ImGui::BeginChild(("##ted_findwnd" + std::string(aTitle)).c_str(), ImVec2(220, mReplaceOpened ? 80 : 40), true);
-		
+
+		// check for findnext shortcut here...
+		ShortcutID curActionID = ShortcutID::Count;
+		ImGuiIO& io = ImGui::GetIO();
+		auto shift = io.KeyShift;
+		auto ctrl = io.ConfigMacOSXBehaviors ? io.KeySuper : io.KeyCtrl;
+		auto alt = io.ConfigMacOSXBehaviors ? io.KeyCtrl : io.KeyAlt;
+		for (int i = 0; i < m_shortcuts.size(); i++) {
+			auto sct = m_shortcuts[i];
+
+			if (sct.Key1 == -1)
+				continue;
+
+			SDL_Scancode sc1 = SDL_GetScancodeFromKey(sct.Key1);
+
+			if (ImGui::IsKeyPressed(sc1) && ((sct.Key2 != -1 && ImGui::IsKeyPressed(SDL_GetScancodeFromKey(sct.Key2))) || sct.Key2 == -1)) {
+				if (((sct.Ctrl == 0 && !ctrl) || (sct.Ctrl == 1 && ctrl) || (sct.Ctrl == 2)) &&		// ctrl check
+					((sct.Alt == 0 && !alt) || (sct.Alt == 1 && alt) || (sct.Alt == 2)) &&			// alt check
+					((sct.Shift == 0 && !shift) || (sct.Shift == 1 && shift) || (sct.Shift == 2))) {// shift check
+				
+					curActionID = (TextEditor::ShortcutID)i;
+				}
+			}
+		}
+		mFindNext = curActionID == TextEditor::ShortcutID::FindNext;
+
+		if (mFindJustOpened) {
+			std::string txt = GetSelectedText();
+			if (txt.size() > 0)
+				strcpy(mFindWord, txt.c_str());
+		}
+
 		ImGui::PushItemWidth(-45);
-		if (ImGui::InputText(("##ted_findtextbox" + std::string(aTitle)).c_str(), mFindWord, 256, ImGuiInputTextFlags_EnterReturnsTrue)) {
+		if (ImGui::InputText(("##ted_findtextbox" + std::string(aTitle)).c_str(), mFindWord, 256, ImGuiInputTextFlags_EnterReturnsTrue) || mFindNext) {
 			auto curPos = mState.mCursorPosition;
 			size_t cindex = 0;
 			for (size_t ln = 0; ln < curPos.mLine; ln++)
@@ -1418,9 +1452,16 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 				SetSelection(curPos, selEnd);
 				SetCursorPosition(selEnd);
 
-				ImGui::SetKeyboardFocusHere(0);
+				if (!mFindNext)
+					ImGui::SetKeyboardFocusHere(0);
 			}
+
+			mFindNext = false;
 		}
+		if (ImGui::IsItemActive())
+			mFindFocused = true;
+		else
+			mFindFocused = false;
 		if (mFindJustOpened) {
 			ImGui::SetKeyboardFocusHere(0);
 			mFindJustOpened = false;
@@ -1441,6 +1482,10 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 			bool shouldReplace = false;
 			if (ImGui::InputText(("##ted_replacetb" + std::string(aTitle)).c_str(), mReplaceWord, 256, ImGuiInputTextFlags_EnterReturnsTrue))
 				shouldReplace = true;
+			if (ImGui::IsItemActive())
+				mReplaceFocused = true;
+			else
+				mReplaceFocused = false;
 			ImGui::PopItemWidth();
 
 			ImGui::SameLine();
