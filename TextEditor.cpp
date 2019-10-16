@@ -1440,10 +1440,17 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 					if (cindex + charCount > textLoc) {
 						curPos.mLine = ln;
 						curPos.mColumn = textLoc - cindex;
+
+						auto& line = mLines[curPos.mLine];
+						for (int i = 0; i < line.size(); i++)
+							if (line[i].mChar == '\t')
+								curPos.mColumn += (mTabSize - 1);
+
 						break;
 					}
-					else // just keep adding
+					else {// just keep adding
 						cindex += charCount;
+					}
 				}
 
 
@@ -1451,6 +1458,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 				selEnd.mColumn += strlen(mFindWord);
 				SetSelection(curPos, selEnd);
 				SetCursorPosition(selEnd);
+				mScrollToCursor = true;
 
 				if (!mFindNext)
 					ImGui::SetKeyboardFocusHere(0);
@@ -1511,6 +1519,12 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 							if (cindex + charCount > textLoc) {
 								curPos.mLine = ln;
 								curPos.mColumn = textLoc - cindex;
+
+								auto& line = mLines[curPos.mLine];
+								for (int i = 0; i < line.size(); i++)
+									if (line[i].mChar == '\t')
+										curPos.mColumn += (mTabSize - 1);
+
 								break;
 							}
 							else // just keep adding
@@ -1524,6 +1538,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 						DeleteSelection(); // ik there are better and more optimized ways to do this, but im lazy rn
 						InsertText(mReplaceWord);
 						SetCursorPosition(selEnd);
+						mScrollToCursor = true;
 
 						ImGui::SetKeyboardFocusHere(0);
 					}
@@ -1551,6 +1566,12 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 								if (cindex + charCount > textLoc) {
 									curPos.mLine = ln;
 									curPos.mColumn = textLoc - cindex;
+
+									auto& line = mLines[curPos.mLine];
+									for (int i = 0; i < line.size(); i++)
+										if (line[i].mChar == '\t')
+											curPos.mColumn += (mTabSize - 1);
+
 									break;
 								}
 								else // just keep adding
@@ -1564,6 +1585,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 							DeleteSelection(); // ik there are better and more optimized ways to do this, but im lazy rn
 							InsertText(mReplaceWord);
 							SetCursorPosition(selEnd);
+							mScrollToCursor = true;
 
 							ImGui::SetKeyboardFocusHere(0);
 
