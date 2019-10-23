@@ -18,6 +18,7 @@
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui/imgui.h> // for imGui::GetCurrentWindow()
+#include <imgui/imgui_internal.h>
 
 // TODO
 // - multiline comments vs single-line: latter is blocking start of a ML
@@ -89,8 +90,8 @@ TextEditor::TextEditor()
 	m_shortcuts[(int)TextEditor::ShortcutID::MoveRight] = TextEditor::Shortcut(SDLK_RIGHT, -1, 0, 2, 2); // RIGHT ARROW (+ SHIFT/CTRL)
 	m_shortcuts[(int)TextEditor::ShortcutID::MoveUpBlock] = TextEditor::Shortcut(SDLK_PAGEUP, -1, 0, 0, 2); // PAGE UP (+ SHIFT)
 	m_shortcuts[(int)TextEditor::ShortcutID::MoveDownBlock] = TextEditor::Shortcut(SDLK_PAGEDOWN, -1, 0, 0, 2); // PAGE DOWN (+ SHIFT)
-	m_shortcuts[(int)TextEditor::ShortcutID::MoveTop] = TextEditor::Shortcut(SDLK_HOME, -1, 1, 0, 2); // CTRL + HOME (+ SHIFT)
-	m_shortcuts[(int)TextEditor::ShortcutID::MoveBottom] = TextEditor::Shortcut(SDLK_END, -1, 1, 0, 2); // CTRL + END (+ SHIFT)
+	m_shortcuts[(int)TextEditor::ShortcutID::MoveTop] = TextEditor::Shortcut(SDLK_HOME, -1, 0, 1, 2); // CTRL + HOME (+ SHIFT)
+	m_shortcuts[(int)TextEditor::ShortcutID::MoveBottom] = TextEditor::Shortcut(SDLK_END, -1, 0, 1, 2); // CTRL + END (+ SHIFT)
 	m_shortcuts[(int)TextEditor::ShortcutID::MoveStartLine] = TextEditor::Shortcut(SDLK_HOME, -1, 0, 0, 2); // HOME (+ SHIFT)
 	m_shortcuts[(int)TextEditor::ShortcutID::MoveEndLine] = TextEditor::Shortcut(SDLK_END, -1, 0, 0, 2); // END (+ SHIFT)
 	m_shortcuts[(int)TextEditor::ShortcutID::ForwardDelete] = TextEditor::Shortcut(SDLK_DELETE, -1, 0, 2, 0); // CTRL + DELETE
@@ -1351,11 +1352,12 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 
 	ImVec2 findOrigin = ImGui::GetCursorScreenPos();
 	float windowWidth = ImGui::GetWindowWidth();
-
+	
 	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(mPalette[(int)PaletteIndex::Background]));
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
 	if (!mIgnoreImGuiChild)
-		ImGui::BeginChild(aTitle, aSize, aBorder, (ImGuiWindowFlags_AlwaysHorizontalScrollbar * mHorizontalScroll) | ImGuiWindowFlags_NoMove);
+		ImGui::BeginChild(aTitle, aSize, aBorder, (ImGuiWindowFlags_AlwaysHorizontalScrollbar * mHorizontalScroll) | ImGuiWindowFlags_NoMove |
+			ImGuiWindowFlags_NoNav);
 	
 	if (mHandleKeyboardInputs)
 	{
