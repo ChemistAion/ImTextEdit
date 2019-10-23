@@ -107,8 +107,8 @@ TextEditor::TextEditor()
 	m_shortcuts[(int)TextEditor::ShortcutID::AutocompleteDown] = TextEditor::Shortcut(SDLK_DOWN, -1, 0, 0, 2); // DOWN ARROW
 	m_shortcuts[(int)TextEditor::ShortcutID::NewLine] = TextEditor::Shortcut(SDLK_RETURN, -1, 0, 0, 0); // RETURN
 	m_shortcuts[(int)TextEditor::ShortcutID::IndentShift] = TextEditor::Shortcut(SDLK_TAB, -1, 0, 0, 2); // TAB
-	m_shortcuts[(int)TextEditor::ShortcutID::Find] = TextEditor::Shortcut(SDLK_f, -1, 0, 0, 1); // CTRL+F
-	m_shortcuts[(int)TextEditor::ShortcutID::Replace] = TextEditor::Shortcut(SDLK_h, -1, 0, 0, 1); // CTRL+H
+	m_shortcuts[(int)TextEditor::ShortcutID::Find] = TextEditor::Shortcut(SDLK_f, -1, 0, 1, 0); // CTRL+F
+	m_shortcuts[(int)TextEditor::ShortcutID::Replace] = TextEditor::Shortcut(SDLK_h, -1, 0, 1, 0); // CTRL+H
 	m_shortcuts[(int)TextEditor::ShortcutID::FindNext] = TextEditor::Shortcut(SDLK_F3, -1, 0, 0, 0); // F3
 }
 
