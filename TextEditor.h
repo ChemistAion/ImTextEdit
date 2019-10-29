@@ -43,50 +43,67 @@ public:
 
 	enum class ShortcutID
 	{
-		Undo,						// CTRL+Z
-		Redo,						// CTRL+Y
-		MoveUp,						// UP ARROW or SHIFT/CTRL + UP ARROW
-		MoveDown,					// DOWN ARROW or SHIFT/CTRL + DOWN ARROW
-		MoveLeft,					// LEFT ARROW or SHIFT/CTRL + LEFT ARROW
-		MoveRight,					// RIGHT ARROW or SHIFT/CTRL + RIGHT ARROW
-		MoveTop,					// CTRL+HOME
-		MoveBottom,					// CTRL+END
-		MoveUpBlock,				// PAGE UP (+ SHIFT)
-		MoveDownBlock,				// PAGE DOWN (+ SHIFT)
-		MoveEndLine,				// END
-		MoveStartLine,				// HOME
-		ForwardDelete,				// (CTRL+)DELETE
-		BackwardDelete,				// (CTRL+)BACKSPACE
-		OverwriteCursor,			// INSERT
-		Copy,						// CTRL+C
-		Paste,						// CTRL+V
-		Cut,						// CTRL+X
-		SelectAll,					// CTRL+A
-		AutocompleteOpen,			// CTRL+SPACE
-		AutocompleteSelect,			// TAB
-		AutocompleteSelectActive,	// ENTER
-		AutocompleteUp,				// UP ARROW
-		AutocompleteDown,			// DOWN ARROW
-		NewLine,					// ENTER
-		IndentShift,				// (SHIFT+)TAB 
-		Find,						// CTRL+F
-		Replace,					// CTRL+H
-		FindNext,					// F3
-		Count						// how many shortcuts are there?
+		Undo,
+		Redo,
+		MoveUp,
+		SelectUp,
+		MoveDown,
+		SelectDown,
+		MoveLeft,
+		SelectLeft,
+		MoveWordLeft,
+		SelectWordLeft,
+		MoveRight,
+		SelectRight,
+		MoveWordRight,
+		SelectWordRight,
+		MoveUpBlock,
+		SelectUpBlock,
+		MoveDownBlock,
+		SelectDownBlock,
+		MoveTop,
+		SelectTop,
+		MoveBottom,
+		SelectBottom,
+		MoveStartLine,
+		SelectStartLine,
+		MoveEndLine,
+		SelectEndLine,
+		ForwardDelete,
+		ForwardDeleteWord,
+		BackwardDelete,
+		BackwardDeleteWord,
+		OverwriteCursor,
+		Copy,
+		Paste,
+		Cut,
+		SelectAll,
+		AutocompleteOpen,
+		AutocompleteSelect,
+		AutocompleteSelectActive,
+		AutocompleteUp,
+		AutocompleteDown,
+		NewLine,
+		Indent,
+		Unindent,
+		Find,
+		Replace,
+		FindNext,
+		Count
 	};
 	
 	struct Shortcut
 	{
-		// 0 - not used, 1 - must be used, 2 - can be used
-		int Alt;
-		int Ctrl;
-		int Shift;
+		// 0 - not used, 1 - used
+		bool Alt;
+		bool Ctrl;
+		bool Shift;
 
 		// -1 - not used, everything else: Win32 VK_ code
 		int Key1;
 		int Key2;
 
-		Shortcut(int vk1 = -1, int vk2 = -2, int alt = 0, int ctrl = 0, int shift = 0) :
+		Shortcut(int vk1 = -1, int vk2 = -2, bool alt = 0, bool ctrl = 0, bool shift = 0) :
 			Key1(vk1), Key2(vk2), Alt(alt), Ctrl(ctrl), Shift(shift) { }
 	};
 
@@ -239,7 +256,7 @@ public:
 
 	TextEditor();
 	~TextEditor();
-
+	
 	void SetLanguageDefinition(const LanguageDefinition& aLanguageDef);
 	const LanguageDefinition& GetLanguageDefinition() const { return mLanguageDefinition; }
 
@@ -332,7 +349,8 @@ public:
 
 	inline void SetShowLineNumbers(bool s) { mShowLineNumbers = s; mTextStart = s ? 20 : 6; mLeftMargin = s ? 10 : -20; }
 	inline int GetTextStart() const { return mShowLineNumbers ? 7 : 3; }
-
+	
+	static const std::vector<Shortcut> GetDefaultShortcuts();
 	static const Palette& GetDarkPalette();
 	static const Palette& GetLightPalette();
 	static const Palette& GetRetroBluePalette();
