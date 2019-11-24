@@ -117,8 +117,10 @@ const std::vector<TextEditor::Shortcut> TextEditor::GetDefaultShortcuts()
 	ret[(int)TextEditor::ShortcutID::SelectEndLine] = TextEditor::Shortcut(SDLK_END, -1, 0, 0, 1); // SHIFT + END
 	ret[(int)TextEditor::ShortcutID::ForwardDelete] = TextEditor::Shortcut(SDLK_DELETE, -1, 0, 0, 0); // DELETE
 	ret[(int)TextEditor::ShortcutID::ForwardDeleteWord] = TextEditor::Shortcut(SDLK_DELETE, -1, 0, 1, 0); // CTRL + DELETE
+	ret[(int)TextEditor::ShortcutID::DeleteRight] = TextEditor::Shortcut(SDLK_DELETE, -1, 0, 0, 1); // SHIFT+BACKSPACE
 	ret[(int)TextEditor::ShortcutID::BackwardDelete] = TextEditor::Shortcut(SDLK_BACKSPACE, -1, 0, 0, 0); // BACKSPACE
 	ret[(int)TextEditor::ShortcutID::BackwardDeleteWord] = TextEditor::Shortcut(SDLK_BACKSPACE, -1, 0, 1, 0); // CTRL + BACKSPACE
+	ret[(int)TextEditor::ShortcutID::DeleteLeft] = TextEditor::Shortcut(SDLK_BACKSPACE, -1, 0, 0, 1); // SHIFT+BACKSPACE
 	ret[(int)TextEditor::ShortcutID::OverwriteCursor] = TextEditor::Shortcut(SDLK_INSERT, -1, 0, 0, 0); // INSERT
 	ret[(int)TextEditor::ShortcutID::Copy] = TextEditor::Shortcut(SDLK_c, -1, 0, 1, 0); // CTRL+C
 	ret[(int)TextEditor::ShortcutID::Paste] = TextEditor::Shortcut(SDLK_v, -1, 0, 1, 0); // CTRL+V
@@ -823,6 +825,8 @@ void TextEditor::HandleKeyboardInputs()
 						case ShortcutID::Undo:
 						case ShortcutID::ForwardDelete:
 						case ShortcutID::BackwardDelete:
+						case ShortcutID::DeleteLeft:
+						case ShortcutID::DeleteRight:
 						case ShortcutID::ForwardDeleteWord:
 						case ShortcutID::BackwardDeleteWord:
 							additionalChecks = !IsReadOnly();
@@ -885,12 +889,14 @@ void TextEditor::HandleKeyboardInputs()
 				case ShortcutID::SelectEndLine: MoveEnd(true); break;
 				case ShortcutID::MoveStartLine: MoveHome(false); break;
 				case ShortcutID::SelectStartLine: MoveHome(true); break;
+				case ShortcutID::DeleteRight:
 				case ShortcutID::ForwardDelete: Delete(); break;
 				case ShortcutID::ForwardDeleteWord:
 					if (ctrl)
 						MoveRight(1, true, true);
 					Delete();
 				break;
+				case ShortcutID::DeleteLeft:
 				case ShortcutID::BackwardDelete: Backspace(); break;
 				case ShortcutID::BackwardDeleteWord:
 					if (ctrl)
