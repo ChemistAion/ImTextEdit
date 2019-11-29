@@ -975,7 +975,7 @@ void TextEditor::HandleKeyboardInputs()
 					keepACOpened = true;
 				break;
 				case ShortcutID::AutocompleteDown:
-					mACIndex = std::min<int>(mACIndex + 1, (int)mACSuggestions.size()), mACSwitched = true;
+					mACIndex = std::min<int>(mACIndex + 1, (int)mACSuggestions.size()-1), mACSwitched = true;
 					keepACOpened = true;
 				break;
 				case ShortcutID::NewLine:
@@ -1350,6 +1350,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 		ImFont* font = ImGui::GetFont();
 		ImGui::PopFont();
 
+		ImGui::SetNextWindowBgAlpha(0.5f);
 		ImGui::SetNextWindowPos(CoordinatesToScreenPos(acCoord), ImGuiCond_Always);
 		ImGui::BeginChild("##texteditor_autocompl", ImVec2(150, 100), true);
 
@@ -1435,10 +1436,9 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		ImFont* font = ImGui::GetFont();
 		ImGui::PopFont();
 
-		ImVec4 bgc = ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
-
+		ImGui::SetNextWindowBgAlpha(0.5f);
 		ImGui::SetNextWindowPos(ImVec2(findOrigin.x + windowWidth - 250, findOrigin.y), ImGuiCond_Always);
-		ImGui::BeginChild(("##ted_findwnd" + std::string(aTitle)).c_str(), ImVec2(220, mReplaceOpened ? 80 : 40), true);
+		ImGui::BeginChild(("##ted_findwnd" + std::string(aTitle)).c_str(), ImVec2(220, mReplaceOpened ? 90 : 40), true);
 
 		// check for findnext shortcut here...
 		ShortcutID curActionID = ShortcutID::Count;
