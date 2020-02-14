@@ -66,6 +66,7 @@ TextEditor::TextEditor()
 	, mHandleMouseInputs(true)
 	, mIgnoreImGuiChild(false)
 	, mShowWhitespaces(false)
+	, mDebugCurrentLineUpdated(false)
 	, mDebugCurrentLine(-1)
 	, mStartTime(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
 {
@@ -1445,7 +1446,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 					}
 					else if (IsDebugging() && OnIdentifierHover) {
 						ImGui::BeginTooltip();
-						OnIdentifierHover(id);
+						OnIdentifierHover(this, id);
 						ImGui::EndTooltip();
 					}
 				}
@@ -1481,6 +1482,29 @@ void TextEditor::RenderInternal(const char* aTitle)
 	}
 
 	ImGui::Dummy(ImVec2((longest + 2), mLines.size() * mCharAdvance.y));
+
+	if (mDebugCurrentLineUpdated) {
+		float scrollX = ImGui::GetScrollX();
+		float scrollY = ImGui::GetScrollY();
+
+		auto height = ImGui::GetWindowHeight();
+		auto width = ImGui::GetWindowWidth();
+
+		auto top = 1 + (int)ceil(scrollY / mCharAdvance.y);
+		auto bottom = (int)ceil((scrollY + height) / mCharAdvance.y);
+
+		auto left = (int)ceil(scrollX / mCharAdvance.x);
+		auto right = (int)ceil((scrollX + width) / mCharAdvance.x);
+
+		TextEditor::Coordinates pos(mDebugCurrentLine, 0);
+
+		if (pos.mLine < top)
+			ImGui::SetScrollY(std::max(0.0f, (pos.mLine - 1) * mCharAdvance.y));
+		if (pos.mLine > bottom - 4)
+			ImGui::SetScrollY(std::max(0.0f, (pos.mLine + 4) * mCharAdvance.y - height));
+
+		mDebugCurrentLineUpdated = false;
+	}
 
 	if (mScrollToCursor)
 	{
@@ -1547,7 +1571,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		else {
 			int line = ScreenPosToCoordinates(mRightClickPos).mLine + 1;
 
-			if (ImGui::Selectable("Jump") && OnDebuggerJump) OnDebuggerJump(line);
+			if (ImGui::Selectable("Jump") && OnDebuggerJump) OnDebuggerJump(this, line);
 			if (ImGui::Selectable("Breakpoint")) AddBreakpoint(line);
 			if (HasBreakpoint(line)) {
 				const auto& bkpt = GetBreakpoint(line);
@@ -1816,23 +1840,23 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		ImGui::BeginChild(("##ted_dbgcontrols" + std::string(aTitle)).c_str(), ImVec2(300, 40), true, ImGuiWindowFlags_NoScrollbar);
 
 		if (ImGui::Button(("Step##ted_dbgstep" + std::string(aTitle)).c_str()) && OnDebuggerAction)
-			OnDebuggerAction(TextEditor::DebugAction::Step);
+			OnDebuggerAction(this, TextEditor::DebugAction::Step);
 		ImGui::SameLine(0, 6);
 
 		if (ImGui::Button(("Step In##ted_dbgstepin" + std::string(aTitle)).c_str()) && OnDebuggerAction)
-			OnDebuggerAction(TextEditor::DebugAction::StepIn);
+			OnDebuggerAction(this, TextEditor::DebugAction::StepIn);
 		ImGui::SameLine(0, 6);
 
 		if (ImGui::Button(("Step Out##ted_dbgstepout" + std::string(aTitle)).c_str()) && OnDebuggerAction)
-			OnDebuggerAction(TextEditor::DebugAction::StepOut);
+			OnDebuggerAction(this, TextEditor::DebugAction::StepOut);
 		ImGui::SameLine(0, 6);
 
 		if (ImGui::Button(("Continue##ted_dbgcontinue" + std::string(aTitle)).c_str()) && OnDebuggerAction)
-			OnDebuggerAction(TextEditor::DebugAction::Continue);
+			OnDebuggerAction(this, TextEditor::DebugAction::Continue);
 		ImGui::SameLine(0, 6);
 
 		if (ImGui::Button(("Stop##ted_dbgstop" + std::string(aTitle)).c_str()) && OnDebuggerAction)
-			OnDebuggerAction(TextEditor::DebugAction::Stop);
+			OnDebuggerAction(this, TextEditor::DebugAction::Stop);
 		ImGui::SameLine(0, 6);
 
 		ImGui::EndChild();
@@ -3243,6 +3267,10 @@ void TextEditor::EnsureCursorVisible()
 		ImGui::SetScrollX(std::max(0.0f, len + mTextStart - 4));
 	if (len + mTextStart > right - 4)
 		ImGui::SetScrollX(std::max(0.0f, len + mTextStart + 4 - width));
+}
+void TextEditor::SetCurrentLineIndicator(int line) {
+	mDebugCurrentLine = line;
+	mDebugCurrentLineUpdated = true;
 }
 
 int TextEditor::GetPageSize() const

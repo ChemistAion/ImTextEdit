@@ -278,6 +278,8 @@ public:
 	void RemoveBreakpoint(int line);
 	void SetBreakpointEnabled(int line, bool enable);
 	Breakpoint& GetBreakpoint(int line);
+	inline const std::vector<Breakpoint>& GetBreakpoints() { return mBreakpoints; }
+	void SetCurrentLineIndicator(int line);
 
 	inline bool IsDebugging() { return mDebugCurrentLine > 0; }
 
@@ -379,9 +381,9 @@ public:
 		Stop
 	};
 
-	std::function<void(int)> OnDebuggerJump;
-	std::function<void(DebugAction)> OnDebuggerAction;
-	std::function<void(const std::string&)> OnIdentifierHover;
+	std::function<void(TextEditor*, int)> OnDebuggerJump;
+	std::function<void(TextEditor*, DebugAction)> OnDebuggerAction;
+	std::function<void(TextEditor*, const std::string&)> OnIdentifierHover;
 	std::function<void(TextEditor*, int)> OnBreakpointRemove;
 	std::function<void(TextEditor*, int, const std::string&, bool)> OnBreakpointUpdate;
 
@@ -522,6 +524,7 @@ private:
 	LanguageDefinition mLanguageDefinition;
 	RegexList mRegexList;
 
+	bool mDebugCurrentLineUpdated;
 	int mDebugCurrentLine;
 	ImVec2 mUICursorPos;
 	std::vector<Breakpoint> mBreakpoints;
