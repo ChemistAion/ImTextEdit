@@ -1444,10 +1444,12 @@ void TextEditor::RenderInternal(const char* aTitle)
 						ImGui::TextUnformatted(pi->second.mDeclaration.c_str());
 						ImGui::EndTooltip();
 					}
-					else if (IsDebugging() && OnIdentifierHover) {
-						ImGui::BeginTooltip();
-						OnIdentifierHover(this, id);
-						ImGui::EndTooltip();
+					else if (IsDebugging() && OnIdentifierHover && HasIdentifierHover) {
+						if (HasIdentifierHover(this, id)) {
+							ImGui::BeginTooltip();
+							OnIdentifierHover(this, id);
+							ImGui::EndTooltip();
+						}
 					}
 				}
 			}

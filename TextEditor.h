@@ -384,6 +384,7 @@ public:
 	std::function<void(TextEditor*, int)> OnDebuggerJump;
 	std::function<void(TextEditor*, DebugAction)> OnDebuggerAction;
 	std::function<void(TextEditor*, const std::string&)> OnIdentifierHover;
+	std::function<bool(TextEditor*, const std::string&)> HasIdentifierHover;
 	std::function<void(TextEditor*, int)> OnBreakpointRemove;
 	std::function<void(TextEditor*, int, const std::string&, bool)> OnBreakpointUpdate;
 
