@@ -298,7 +298,7 @@ public:
 
 	bool IsFocused() const { return mFocused; }
 	void SetReadOnly(bool aValue);
-	bool IsReadOnly() const { return mReadOnly; }
+	bool IsReadOnly() { return mReadOnly || IsDebugging(); }
 	bool IsTextChanged() const { return mTextChanged; }
 	bool IsCursorPositionChanged() const { return mCursorPositionChanged; }
 	inline void ResetTextChanged() { mTextChanged = false; }
@@ -345,8 +345,8 @@ public:
 	void Paste();
 	void Delete();
 
-	bool CanUndo() const;
-	bool CanRedo() const;
+	bool CanUndo();
+	bool CanRedo();
 	void Undo(int aSteps = 1);
 	void Redo(int aSteps = 1);
 

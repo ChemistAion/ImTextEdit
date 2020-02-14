@@ -1244,7 +1244,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 
 				drawList->AddCircle(ImVec2(startX, startY), radius + 1, mPalette[(int)PaletteIndex::BreakpointOutline]);
 				drawList->AddCircleFilled(ImVec2(startX, startY), radius, mPalette[(int)PaletteIndex::Breakpoint]);
-
+				
 				Breakpoint bkpt = GetBreakpoint(lineNo + 1);
 				if (!bkpt.mEnabled)
 					drawList->AddCircleFilled(ImVec2(startX, startY), radius-1, mPalette[(int)PaletteIndex::BreakpointOutline]);
@@ -2789,14 +2789,14 @@ void TextEditor::Paste()
 	}
 }
 
-bool TextEditor::CanUndo() const
+bool TextEditor::CanUndo()
 {
-	return !mReadOnly && mUndoIndex > 0;
+	return !IsReadOnly() && mUndoIndex > 0;
 }
 
-bool TextEditor::CanRedo() const
+bool TextEditor::CanRedo()
 {
-	return !mReadOnly && mUndoIndex < (int)mUndoBuffer.size();
+	return !IsReadOnly() && mUndoIndex < (int)mUndoBuffer.size();
 }
 
 void TextEditor::Undo(int aSteps)
@@ -3270,7 +3270,7 @@ void TextEditor::EnsureCursorVisible()
 }
 void TextEditor::SetCurrentLineIndicator(int line) {
 	mDebugCurrentLine = line;
-	mDebugCurrentLineUpdated = true;
+	mDebugCurrentLineUpdated = line > 0;
 }
 
 int TextEditor::GetPageSize() const
