@@ -55,7 +55,7 @@ TextEditor::TextEditor()
 	, mTextChanged(false)
 	, mColorizerEnabled(true)
 	, mTextStart(20.0f)
-	, mLeftMargin(10)
+	, mLeftMargin(DebugDataSpace + LineNumberSpace)
 	, mCursorPositionChanged(false)
 	, mColorRangeMin(0)
 	, mColorRangeMax(0)
@@ -66,6 +66,7 @@ TextEditor::TextEditor()
 	, mHandleMouseInputs(true)
 	, mIgnoreImGuiChild(false)
 	, mShowWhitespaces(false)
+	, mDebugCurrentLine(7)
 	, mStartTime(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
 {
 
@@ -76,6 +77,12 @@ TextEditor::TextEditor()
 	mFindJustOpened = false;
 	mFindFocused = false;
 	mReplaceFocused = false;
+
+	OnDebuggerJump = nullptr;
+	OnDebuggerAction = nullptr;
+	OnBreakpointRemove = nullptr;
+	OnBreakpointUpdate = nullptr;
+	OnIdentifierHover = nullptr;
 
 	SetPalette(GetDarkPalette());
 	SetLanguageDefinition(LanguageDefinition::HLSL());
@@ -411,7 +418,7 @@ void TextEditor::AddUndo(UndoRecord& aValue)
 
 TextEditor::Coordinates TextEditor::ScreenPosToCoordinates(const ImVec2& aPosition) const
 {
-	ImVec2 origin = ImGui::GetCursorScreenPos();
+	ImVec2 origin = mUICursorPos;
 	ImVec2 local(aPosition.x - origin.x, aPosition.y - origin.y);
 
 	int lineNo = std::max(0, (int)floor(local.y / mCharAdvance.y));
@@ -676,14 +683,14 @@ void TextEditor::RemoveLine(int aStart, int aEnd)
 	}
 	mErrorMarkers = std::move(etmp);
 
-	Breakpoints btmp;
-	for (auto i : mBreakpoints)
+	auto btmp = mBreakpoints;
+	mBreakpoints.clear();
+	for (auto i : btmp)
 	{
-		if (i >= aStart && i <= aEnd)
+		if (i.mLine >= aStart && i.mLine <= aEnd)
 			continue;
-		btmp.insert(i >= aStart ? i - 1 : i);
+		AddBreakpoint(i.mLine >= aStart ? i.mLine - 1 : i.mLine, i.mCondition, i.mEnabled);
 	}
-	mBreakpoints = std::move(btmp);
 
 	mLines.erase(mLines.begin() + aStart, mLines.begin() + aEnd);
 	assert(!mLines.empty());
@@ -706,14 +713,14 @@ void TextEditor::RemoveLine(int aIndex)
 	}
 	mErrorMarkers = std::move(etmp);
 
-	Breakpoints btmp;
-	for (auto i : mBreakpoints)
+	auto btmp = mBreakpoints;
+	mBreakpoints.clear();
+	for (auto i : btmp)
 	{
-		if (i == aIndex)
+		if (i.mLine == aIndex)
 			continue;
-		btmp.insert(i >= aIndex ? i - 1 : i);
+		AddBreakpoint(i.mLine >= aIndex ? i.mLine - 1 : i.mLine, i.mCondition, i.mEnabled);
 	}
-	mBreakpoints = std::move(btmp);
 
 	mLines.erase(mLines.begin() + aIndex);
 	assert(!mLines.empty());
@@ -732,10 +739,10 @@ TextEditor::Line& TextEditor::InsertLine(int aIndex)
 		etmp.insert(ErrorMarkers::value_type(i.first >= aIndex ? i.first + 1 : i.first, i.second));
 	mErrorMarkers = std::move(etmp);
 
-	Breakpoints btmp;
-	for (auto i : mBreakpoints)
-		btmp.insert(i >= aIndex ? i + 1 : i);
-	mBreakpoints = std::move(btmp);
+	auto btmp = mBreakpoints;
+	mBreakpoints.clear();
+	for (auto i : btmp)
+		AddBreakpoint(i.mLine >= aIndex ? i.mLine + 1 : i.mLine, i.mCondition, i.mEnabled);
 
 	return result;
 }
@@ -1064,19 +1071,31 @@ void TextEditor::HandleMouseInputs()
 			}
 
 			/*
-				Left mouse button click
+				mouse button click
 			*/
 			else if (click)
 			{
-				mACOpened = false;
-				mState.mCursorPosition = mInteractiveStart = mInteractiveEnd = ScreenPosToCoordinates(ImGui::GetMousePos());
-				if (ctrl)
-					mSelectionMode = SelectionMode::Word;
-				else
-					mSelectionMode = SelectionMode::Normal;
-				SetSelection(mInteractiveStart, mInteractiveEnd, mSelectionMode);
+				ImVec2 pos = ImGui::GetMousePos();
 
-				mLastClick = (float)ImGui::GetTime();
+				if (pos.x - mUICursorPos.x < ImGui::GetStyle().WindowPadding.x + DebugDataSpace) {
+					Coordinates lineInfo = ScreenPosToCoordinates(ImGui::GetMousePos());
+					lineInfo.mLine += 1;
+
+					if (HasBreakpoint(lineInfo.mLine))
+						RemoveBreakpoint(lineInfo.mLine);
+					else AddBreakpoint(lineInfo.mLine);
+				}
+				else {
+					mACOpened = false;
+					mState.mCursorPosition = mInteractiveStart = mInteractiveEnd = ScreenPosToCoordinates(ImGui::GetMousePos());
+					if (ctrl)
+						mSelectionMode = SelectionMode::Word;
+					else
+						mSelectionMode = SelectionMode::Normal;
+					SetSelection(mInteractiveStart, mInteractiveEnd, mSelectionMode);
+
+					mLastClick = (float)ImGui::GetTime();
+				}
 			}
 			// Mouse left button dragging (=> update selection)
 			else if (ImGui::IsMouseDragging(0) && ImGui::IsMouseDown(0))
@@ -1088,6 +1107,54 @@ void TextEditor::HandleMouseInputs()
 
 		}
 	}
+}
+
+bool TextEditor::HasBreakpoint(int line)
+{
+	for (const auto& bkpt : mBreakpoints)
+		if (bkpt.mLine == line)
+			return true;
+	return false;
+}
+void TextEditor::AddBreakpoint(int line, std::string condition, bool enabled)
+{
+	RemoveBreakpoint(line);
+
+	Breakpoint bkpt;
+	bkpt.mLine = line;
+	bkpt.mCondition = condition;
+	bkpt.mEnabled = enabled;
+
+	if (OnBreakpointUpdate)
+		OnBreakpointUpdate(this, line, condition, enabled);
+
+	mBreakpoints.push_back(bkpt);
+}
+void TextEditor::RemoveBreakpoint(int line)
+{
+	for (int i = 0; i < mBreakpoints.size(); i++)
+		if (mBreakpoints[i].mLine == line) {
+			mBreakpoints.erase(mBreakpoints.begin() + i);
+			if (OnBreakpointRemove)
+				OnBreakpointRemove(this, line);
+			break;
+		}
+}
+void TextEditor::SetBreakpointEnabled(int line, bool enable)
+{
+	for (int i = 0; i < mBreakpoints.size(); i++)
+		if (mBreakpoints[i].mLine == line) {
+			mBreakpoints[i].mEnabled = enable;
+			if (OnBreakpointUpdate)
+				OnBreakpointUpdate(this, line, mBreakpoints[i].mCondition, enable);
+			break;
+		}
+}
+TextEditor::Breakpoint& TextEditor::GetBreakpoint(int line)
+{
+	for (int i = 0; i < mBreakpoints.size(); i++)
+		if (mBreakpoints[i].mLine == line)
+			return mBreakpoints[i];
 }
 
 void TextEditor::RenderInternal(const char* aTitle)
@@ -1117,7 +1184,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 		ImGui::SetScrollY(0.f);
 	}
 
-	ImVec2 cursorScreenPos = ImGui::GetCursorScreenPos();
+	ImVec2 cursorScreenPos = mUICursorPos = ImGui::GetCursorScreenPos();
 	auto scrollX = ImGui::GetScrollX();
 	auto scrollY = ImGui::GetScrollY();
 
@@ -1168,10 +1235,49 @@ void TextEditor::RenderInternal(const char* aTitle)
 			// Draw breakpoints
 			auto start = ImVec2(lineStartScreenPos.x + scrollX, lineStartScreenPos.y);
 
-			if (mBreakpoints.count(lineNo + 1) != 0)
+			if (HasBreakpoint(lineNo + 1) != 0)
 			{
-				auto end = ImVec2(lineStartScreenPos.x + contentSize.x + 2.0f * scrollX, lineStartScreenPos.y + mCharAdvance.y);
-				drawList->AddRectFilled(start, end, mPalette[(int)PaletteIndex::Breakpoint]);
+				float radius = ImGui::GetFontSize() * 1.0f / 3.0f;
+				float startX = lineStartScreenPos.x + radius + 2.0f;
+				float startY = lineStartScreenPos.y + radius + 4.0f;
+
+				drawList->AddCircle(ImVec2(startX, startY), radius + 1, mPalette[(int)PaletteIndex::BreakpointOutline]);
+				drawList->AddCircleFilled(ImVec2(startX, startY), radius, mPalette[(int)PaletteIndex::Breakpoint]);
+
+				Breakpoint bkpt = GetBreakpoint(lineNo + 1);
+				if (!bkpt.mEnabled)
+					drawList->AddCircleFilled(ImVec2(startX, startY), radius-1, mPalette[(int)PaletteIndex::BreakpointOutline]);
+				else {
+					if (!bkpt.mCondition.empty())
+						drawList->AddRectFilled(ImVec2(startX-radius+3, startY-radius/4), ImVec2(startX + radius-3, startY + radius / 4), mPalette[(int)PaletteIndex::BreakpointOutline]);
+				}
+			}
+
+			// Draw current line indicator
+			if (lineNo + 1 == mDebugCurrentLine) {
+				float radius = ImGui::GetFontSize() * 1.0f / 3.0f;
+				float startX = lineStartScreenPos.x + radius + 2.0f;
+				float startY = lineStartScreenPos.y + 4.0f;
+
+				// outline
+				drawList->AddRect(
+					ImVec2(startX - radius, startY + radius / 2), ImVec2(startX, startY + radius * 3.0f / 2.0f),
+					mPalette[(int)PaletteIndex::CurrentLineIndicatorOutline]
+				);
+				drawList->AddTriangle(
+					ImVec2(startX, startY), ImVec2(startX, startY + radius * 2), ImVec2(startX + radius, startY + radius),
+					mPalette[(int)PaletteIndex::CurrentLineIndicatorOutline]
+				);
+
+				// fill
+				drawList->AddRectFilled(
+					ImVec2(startX - radius + 1, startY + 1 + radius / 2), ImVec2(startX + 1, startY - 1 + radius * 3.0f / 2.0f),
+					mPalette[(int)PaletteIndex::CurrentLineIndicator]
+				);
+				drawList->AddTriangleFilled(
+					ImVec2(startX, startY + 1), ImVec2(startX, startY - 1 + radius * 2), ImVec2(startX-1 + radius, startY + radius),
+					mPalette[(int)PaletteIndex::CurrentLineIndicator]
+				);
 			}
 
 			// Draw error markers
@@ -1337,11 +1443,16 @@ void TextEditor::RenderInternal(const char* aTitle)
 						ImGui::TextUnformatted(pi->second.mDeclaration.c_str());
 						ImGui::EndTooltip();
 					}
+					else if (IsDebugging() && OnIdentifierHover) {
+						ImGui::BeginTooltip();
+						OnIdentifierHover(id);
+						ImGui::EndTooltip();
+					}
 				}
 			}
 		}
 	}
-	
+
 	// suggestions window
 	if (mACOpened) {
 		auto acCoord = mACPosition;
@@ -1423,10 +1534,35 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 	ColorizeInternal();
 	RenderInternal(aTitle);
 
+	if (ImGui::IsMouseClicked(1))
+		mRightClickPos = ImGui::GetMousePos();
+
+	bool openBkptConditionWindow = false;
 	if (ImGui::BeginPopupContextItem(("##edcontext" + std::string(aTitle)).c_str())) {
-		if (ImGui::Selectable("Cut")) { Cut(); }
-		if (ImGui::Selectable("Copy")) { Copy(); }
-		if (ImGui::Selectable("Paste")) { Paste(); }
+		if (mRightClickPos.x - mUICursorPos.x > ImGui::GetStyle().WindowPadding.x + DebugDataSpace) {
+			if (ImGui::Selectable("Cut")) { Cut(); }
+			if (ImGui::Selectable("Copy")) { Copy(); }
+			if (ImGui::Selectable("Paste")) { Paste(); }
+		}
+		else {
+			int line = ScreenPosToCoordinates(mRightClickPos).mLine + 1;
+
+			if (ImGui::Selectable("Jump") && OnDebuggerJump) OnDebuggerJump(line);
+			if (ImGui::Selectable("Breakpoint")) AddBreakpoint(line);
+			if (HasBreakpoint(line)) {
+				const auto& bkpt = GetBreakpoint(line);
+				bool isEnabled = bkpt.mEnabled;
+				if (ImGui::Selectable("Condition")) {
+					mPopupCondition_Line = line;
+					mPopupCondition_Use = !bkpt.mCondition.empty();
+					memcpy(mPopupCondition_Condition, bkpt.mCondition.c_str(), bkpt.mCondition.size());
+					mPopupCondition_Condition[std::min<size_t>(511, bkpt.mCondition.size())] = 0;
+					openBkptConditionWindow = true;
+				}
+				if (ImGui::Selectable(isEnabled ? "Disable" : "Enable")) { SetBreakpointEnabled(line, !isEnabled); }
+				if (ImGui::Selectable("Delete")) { RemoveBreakpoint(line); }
+			}
+		}
 		ImGui::EndPopup();
 	}
 
@@ -1667,6 +1803,42 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 			mFindOpened = false;
 	}
 
+	/* DEBUGGER CONTROLS */
+
+	/* FIND TEXT WINDOW */
+	if (IsDebugging())
+	{
+		ImFont* font = ImGui::GetFont();
+		ImGui::PopFont();
+
+		ImGui::SetNextWindowBgAlpha(0.8f);
+		ImGui::SetNextWindowPos(ImVec2(findOrigin.x + windowWidth/2 - 300/2, findOrigin.y), ImGuiCond_Always);
+		ImGui::BeginChild(("##ted_dbgcontrols" + std::string(aTitle)).c_str(), ImVec2(300, 40), true, ImGuiWindowFlags_NoScrollbar);
+
+		if (ImGui::Button(("Step##ted_dbgstep" + std::string(aTitle)).c_str()) && OnDebuggerAction)
+			OnDebuggerAction(TextEditor::DebugAction::Step);
+		ImGui::SameLine(0, 6);
+
+		if (ImGui::Button(("Step In##ted_dbgstepin" + std::string(aTitle)).c_str()) && OnDebuggerAction)
+			OnDebuggerAction(TextEditor::DebugAction::StepIn);
+		ImGui::SameLine(0, 6);
+
+		if (ImGui::Button(("Step Out##ted_dbgstepout" + std::string(aTitle)).c_str()) && OnDebuggerAction)
+			OnDebuggerAction(TextEditor::DebugAction::StepOut);
+		ImGui::SameLine(0, 6);
+
+		if (ImGui::Button(("Continue##ted_dbgcontinue" + std::string(aTitle)).c_str()) && OnDebuggerAction)
+			OnDebuggerAction(TextEditor::DebugAction::Continue);
+		ImGui::SameLine(0, 6);
+
+		if (ImGui::Button(("Stop##ted_dbgstop" + std::string(aTitle)).c_str()) && OnDebuggerAction)
+			OnDebuggerAction(TextEditor::DebugAction::Stop);
+		ImGui::SameLine(0, 6);
+
+		ImGui::EndChild();
+
+		ImGui::PushFont(font);
+	}
 
 	if (mHandleKeyboardInputs)
 		ImGui::PopAllowKeyboardFocus();
@@ -1675,6 +1847,46 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		ImGui::EndChild();
 	ImGui::PopStyleColor();
 	ImGui::PopStyleVar();
+
+	// breakpoint condition popup
+	if (openBkptConditionWindow)
+		ImGui::OpenPopup("Condition##condition");
+
+	ImGui::SetNextWindowSize(ImVec2(430, 175), ImGuiCond_Once);
+	if (ImGui::BeginPopupModal("Condition##condition")) {
+		if (ImGui::Checkbox("Use condition", &mPopupCondition_Use)) {
+			if (!mPopupCondition_Use)
+				mPopupCondition_Condition[0] = 0;
+		}
+
+		if (!mPopupCondition_Use) {
+			ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+		}
+		ImGui::InputText("Condition", mPopupCondition_Condition, 512);
+		if (!mPopupCondition_Use) {
+			ImGui::PopStyleVar();
+			ImGui::PopItemFlag();
+		}
+
+		if (ImGui::Button("Cancel"))
+			ImGui::CloseCurrentPopup();
+		ImGui::SameLine();
+		if (ImGui::Button("OK")) {
+			size_t clen = strlen(mPopupCondition_Condition);
+			bool isEmpty = true;
+			for (size_t i = 0; i < clen; i++)
+				if (!isspace(mPopupCondition_Condition[i])) {
+					isEmpty = false;
+					break;
+				}
+			Breakpoint& bkpt = GetBreakpoint(mPopupCondition_Line);
+			bkpt.mCondition = (mPopupCondition_Use && !isEmpty) ? mPopupCondition_Condition : "";
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
+
 
 	mWithinRender = false;
 }
@@ -2594,7 +2806,10 @@ const TextEditor::Palette & TextEditor::GetDarkPalette()
 		0xffe0e0e0, // Cursor
 		0x80a06020, // Selection
 		0x800020ff, // ErrorMarker
-		0x40f08000, // Breakpoint
+		0xff0000ff, // Breakpoint
+		0xffffffff, // Breakpoint outline
+		0xFF1DD8FF, // Current line indicator
+		0xFF696969, // Current line indicator outline
 		0xff707000, // Line number
 		0x40000000, // Current line fill
 		0x40808080, // Current line fill (inactive)
@@ -2623,7 +2838,9 @@ const TextEditor::Palette & TextEditor::GetLightPalette()
 		0xff000000, // Cursor
 		0x80600000, // Selection
 		0xa00010ff, // ErrorMarker
-		0x80f08000, // Breakpoint
+		0xff0000ff, // Breakpoint
+		0xff000000, // Breakpoint outline
+		0xFF1DD8FF, // Current line indicator
 		0xff505000, // Line number
 		0x40000000, // Current line fill
 		0x40808080, // Current line fill (inactive)
@@ -2652,7 +2869,9 @@ const TextEditor::Palette & TextEditor::GetRetroBluePalette()
 		0xff0080ff, // Cursor
 		0x80ffff00, // Selection
 		0xa00000ff, // ErrorMarker
-		0x80ff8000, // Breakpoint
+		0xff0000ff, // Breakpoint
+		0xffffffff, // Breakpoint outline
+		0xFF1DD8FF, // Current line indicator
 		0xff808000, // Line number
 		0x40000000, // Current line fill
 		0x40808080, // Current line fill (inactive)

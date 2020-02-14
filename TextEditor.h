@@ -6,6 +6,7 @@
 #include <memory>
 #include <unordered_set>
 #include <unordered_map>
+#include <functional>
 #include <thread>
 #include <map>
 #include <regex>
@@ -33,6 +34,9 @@ public:
 		Selection,
 		ErrorMarker,
 		Breakpoint,
+		BreakpointOutline,
+		CurrentLineIndicator,
+		CurrentLineIndicatorOutline,
 		LineNumber,
 		CurrentLineFill,
 		CurrentLineFillInactive,
@@ -93,6 +97,9 @@ public:
 		FindNext,
 		Count
 	};
+
+	static const int LineNumberSpace = 20;
+	static const int DebugDataSpace = 10;
 	
 	struct Shortcut
 	{
@@ -199,7 +206,6 @@ public:
 	typedef std::unordered_map<std::string, Identifier> Identifiers;
 	typedef std::unordered_set<std::string> Keywords;
 	typedef std::map<int, std::string> ErrorMarkers;
-	typedef std::unordered_set<int> Breakpoints;
 	typedef std::array<ImU32, (unsigned)PaletteIndex::Max> Palette;
 	typedef uint8_t Char;
 
@@ -266,7 +272,14 @@ public:
 	void SetPalette(const Palette& aValue);
 
 	void SetErrorMarkers(const ErrorMarkers& aMarkers) { mErrorMarkers = aMarkers; }
-	void SetBreakpoints(const Breakpoints& aMarkers) { mBreakpoints = aMarkers; }
+
+	bool HasBreakpoint(int line);
+	void AddBreakpoint(int line, std::string condition = "", bool enabled = true);
+	void RemoveBreakpoint(int line);
+	void SetBreakpointEnabled(int line, bool enable);
+	Breakpoint& GetBreakpoint(int line);
+
+	inline bool IsDebugging() { return mDebugCurrentLine > 0; }
 
 	void Render(const char* aTitle, const ImVec2& aSize = ImVec2(), bool aBorder = false);
 	void SetText(const std::string& aText);
@@ -349,13 +362,28 @@ public:
 
 	void SetShortcut(TextEditor::ShortcutID id, Shortcut s);
 
-	inline void SetShowLineNumbers(bool s) { mShowLineNumbers = s; mTextStart = s ? 20 : 6; mLeftMargin = s ? 10 : -20; }
+	inline void SetShowLineNumbers(bool s) { mShowLineNumbers = s; mTextStart = (s ? 20 : 6); mLeftMargin = (s ? (DebugDataSpace + LineNumberSpace) : (DebugDataSpace - LineNumberSpace)); }
 	inline int GetTextStart() const { return mShowLineNumbers ? 7 : 3; }
 	
 	static const std::vector<Shortcut> GetDefaultShortcuts();
 	static const Palette& GetDarkPalette();
 	static const Palette& GetLightPalette();
 	static const Palette& GetRetroBluePalette();
+
+	enum class DebugAction
+	{
+		Step,
+		StepIn,
+		StepOut,
+		Continue,
+		Stop
+	};
+
+	std::function<void(int)> OnDebuggerJump;
+	std::function<void(DebugAction)> OnDebuggerAction;
+	std::function<void(const std::string&)> OnIdentifierHover;
+	std::function<void(TextEditor*, int)> OnBreakpointRemove;
+	std::function<void(TextEditor*, int, const std::string&, bool)> OnBreakpointUpdate;
 
 private:
 	typedef std::vector<std::pair<std::regex, PaletteIndex>> RegexList;
@@ -494,8 +522,16 @@ private:
 	LanguageDefinition mLanguageDefinition;
 	RegexList mRegexList;
 
+	int mDebugCurrentLine;
+	ImVec2 mUICursorPos;
+	std::vector<Breakpoint> mBreakpoints;
+	ImVec2 mRightClickPos;
+
+	int mPopupCondition_Line;
+	bool mPopupCondition_Use;
+	char mPopupCondition_Condition[512];
+
 	bool mCheckComments;
-	Breakpoints mBreakpoints;
 	ErrorMarkers mErrorMarkers;
 	ImVec2 mCharAdvance;
 	Coordinates mInteractiveStart, mInteractiveEnd;
