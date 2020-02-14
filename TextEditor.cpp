@@ -66,7 +66,7 @@ TextEditor::TextEditor()
 	, mHandleMouseInputs(true)
 	, mIgnoreImGuiChild(false)
 	, mShowWhitespaces(false)
-	, mDebugCurrentLine(7)
+	, mDebugCurrentLine(-1)
 	, mStartTime(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
 {
 
