@@ -542,7 +542,8 @@ private:
 
 	bool mDebugCurrentLineUpdated;
 	int mDebugCurrentLine;
-	ImVec2 mUICursorPos;
+	ImVec2 mUICursorPos, mFindOrigin;
+	float mWindowWidth;
 	std::vector<Breakpoint> mBreakpoints;
 	ImVec2 mRightClickPos;
 
