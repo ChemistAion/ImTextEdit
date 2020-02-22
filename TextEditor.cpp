@@ -68,6 +68,7 @@ TextEditor::TextEditor()
 	, mShowWhitespaces(false)
 	, mDebugCurrentLineUpdated(false)
 	, mDebugCurrentLine(-1)
+	, mPath("")
 	, mStartTime(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
 {
 
@@ -145,6 +146,13 @@ const std::vector<TextEditor::Shortcut> TextEditor::GetDefaultShortcuts()
 	ret[(int)TextEditor::ShortcutID::Find] = TextEditor::Shortcut(SDLK_f, -1, 0, 1, 0); // CTRL+F
 	ret[(int)TextEditor::ShortcutID::Replace] = TextEditor::Shortcut(SDLK_h, -1, 0, 1, 0); // CTRL+H
 	ret[(int)TextEditor::ShortcutID::FindNext] = TextEditor::Shortcut(SDLK_F3, -1, 0, 0, 0); // F3
+	ret[(int)TextEditor::ShortcutID::DebugStep] = TextEditor::Shortcut(SDLK_F10, -1, 0, 0, 0); // F10
+	ret[(int)TextEditor::ShortcutID::DebugStepInto] = TextEditor::Shortcut(SDLK_F11, -1, 0, 0, 0); // F11
+	ret[(int)TextEditor::ShortcutID::DebugStepOut] = TextEditor::Shortcut(SDLK_F11, -1, 0, 0, 1); // SHIFT+F11
+	ret[(int)TextEditor::ShortcutID::DebugContinue] = TextEditor::Shortcut(SDLK_F5, -1, 0, 0, 0); // F5
+	ret[(int)TextEditor::ShortcutID::DebugStop] = TextEditor::Shortcut(SDLK_F5, -1, 0, 0, 1); // SHIFT+F5
+	ret[(int)TextEditor::ShortcutID::DebugBreakpoint] = TextEditor::Shortcut(SDLK_F9, -1, 0, 0, 0); // F9
+	ret[(int)TextEditor::ShortcutID::DebugJumpHere] = TextEditor::Shortcut(SDLK_h, -1, 1, 1, 0); // CTRL+ALT+H
 
 	return ret;
 }
@@ -997,6 +1005,38 @@ void TextEditor::HandleKeyboardInputs()
 				break;
 				case ShortcutID::Find: mFindOpened = true; mFindJustOpened = true; mReplaceOpened = false; break;
 				case ShortcutID::Replace: mFindOpened = true; mFindJustOpened = true; mReplaceOpened = true; break;
+				case ShortcutID::DebugStep:
+					if (OnDebuggerAction)
+						OnDebuggerAction(this, TextEditor::DebugAction::Step);
+				break;
+				case ShortcutID::DebugStepInto:
+					if (OnDebuggerAction)
+						OnDebuggerAction(this, TextEditor::DebugAction::StepInto);
+				break;
+				case ShortcutID::DebugStepOut:
+					if (OnDebuggerAction)
+						OnDebuggerAction(this, TextEditor::DebugAction::StepOut);
+				break;
+				case ShortcutID::DebugContinue:
+					if (OnDebuggerAction)
+						OnDebuggerAction(this, TextEditor::DebugAction::Continue);
+				break;
+				case ShortcutID::DebugStop:
+					if (OnDebuggerAction)
+						OnDebuggerAction(this, TextEditor::DebugAction::Stop);
+				break;
+				case ShortcutID::DebugJumpHere:
+					if (OnDebuggerJump)
+						OnDebuggerJump(this, GetCursorPosition().mLine);
+				break;
+				case ShortcutID::DebugBreakpoint:
+					if (OnBreakpointUpdate) {
+						int line = GetCursorPosition().mLine + 1;
+						if (HasBreakpoint(line))
+							RemoveBreakpoint(line);
+						else AddBreakpoint(line);
+					}
+				break;
 			}
 		} else if (!IsReadOnly()) {
 			for (int i = 0; i < io.InputQueueCharacters.Size; i++)
@@ -1573,7 +1613,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		else {
 			int line = ScreenPosToCoordinates(mRightClickPos).mLine + 1;
 
-			if (ImGui::Selectable("Jump") && OnDebuggerJump) OnDebuggerJump(this, line);
+			if (IsDebugging() && ImGui::Selectable("Jump") && OnDebuggerJump) OnDebuggerJump(this, line);
 			if (ImGui::Selectable("Breakpoint")) AddBreakpoint(line);
 			if (HasBreakpoint(line)) {
 				const auto& bkpt = GetBreakpoint(line);
@@ -1599,7 +1639,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		ImGui::PopFont();
 
 		ImGui::SetNextWindowBgAlpha(0.5f);
-		ImGui::SetNextWindowPos(ImVec2(findOrigin.x + windowWidth - 250, findOrigin.y), ImGuiCond_Always);
+		ImGui::SetNextWindowPos(ImVec2(findOrigin.x + windowWidth - 250, findOrigin.y + 50 * IsDebugging()), ImGuiCond_Always);
 		ImGui::BeginChild(("##ted_findwnd" + std::string(aTitle)).c_str(), ImVec2(220, mReplaceOpened ? 90 : 40), true);
 
 		// check for findnext shortcut here...
@@ -1846,7 +1886,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		ImGui::SameLine(0, 6);
 
 		if (ImGui::Button(("Step In##ted_dbgstepin" + std::string(aTitle)).c_str()) && OnDebuggerAction)
-			OnDebuggerAction(this, TextEditor::DebugAction::StepIn);
+			OnDebuggerAction(this, TextEditor::DebugAction::StepInto);
 		ImGui::SameLine(0, 6);
 
 		if (ImGui::Button(("Step Out##ted_dbgstepout" + std::string(aTitle)).c_str()) && OnDebuggerAction)
@@ -1908,6 +1948,10 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 				}
 			Breakpoint& bkpt = GetBreakpoint(mPopupCondition_Line);
 			bkpt.mCondition = (mPopupCondition_Use && !isEmpty) ? mPopupCondition_Condition : "";
+
+			if (OnBreakpointUpdate)
+				OnBreakpointUpdate(this, bkpt.mLine, bkpt.mCondition, bkpt.mEnabled);
+
 			ImGui::CloseCurrentPopup();
 		}
 		ImGui::EndPopup();

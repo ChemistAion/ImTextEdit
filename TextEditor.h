@@ -95,6 +95,13 @@ public:
 		Find,
 		Replace,
 		FindNext,
+		DebugStep,
+		DebugStepInto,
+		DebugStepOut,
+		DebugContinue,
+		DebugJumpHere,
+		DebugBreakpoint,
+		DebugStop,
 		Count
 	};
 
@@ -375,7 +382,7 @@ public:
 	enum class DebugAction
 	{
 		Step,
-		StepIn,
+		StepInto,
 		StepOut,
 		Continue,
 		Stop
@@ -388,7 +395,12 @@ public:
 	std::function<void(TextEditor*, int)> OnBreakpointRemove;
 	std::function<void(TextEditor*, int, const std::string&, bool)> OnBreakpointUpdate;
 
+	inline void SetPath(const std::string& path) { mPath = path; }
+	inline const std::string& GetPath() { return mPath; }
+
 private:
+	std::string mPath;
+
 	typedef std::vector<std::pair<std::regex, PaletteIndex>> RegexList;
 	
 	struct EditorState
