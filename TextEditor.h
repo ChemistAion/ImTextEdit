@@ -368,6 +368,7 @@ public:
 	inline void SetCompleteBraces(bool s) { mCompleteBraces = s; }
 	inline void SetHorizontalScroll(bool s) { mHorizontalScroll = s; }
 	inline void SetSmartPredictions(bool s) { mAutocomplete = s; }
+	inline void SetFunctionTooltips(bool s) { mFuncTooltips = s; }
 
 	void SetShortcut(TextEditor::ShortcutID id, Shortcut s);
 
@@ -482,6 +483,8 @@ private:
 	void HandleKeyboardInputs();
 	void HandleMouseInputs();
 	void RenderInternal(const char* aTitle);
+
+	bool mFuncTooltips;
 
 	float mLineSpacing;
 	Lines mLines;

@@ -69,6 +69,7 @@ TextEditor::TextEditor()
 	, mDebugCurrentLineUpdated(false)
 	, mDebugCurrentLine(-1)
 	, mPath("")
+	, mFuncTooltips(true)
 	, mStartTime(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
 {
 
@@ -1463,7 +1464,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 		}
 
 		// Draw a tooltip on known identifiers/preprocessor symbols
-		if (ImGui::IsMousePosValid())
+		if (ImGui::IsMousePosValid() && (IsDebugging() || mFuncTooltips))
 		{
 			auto id = GetWordAt(ScreenPosToCoordinates(ImGui::GetMousePos()));
 			if (!id.empty())
