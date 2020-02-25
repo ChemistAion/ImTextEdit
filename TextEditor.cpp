@@ -398,11 +398,12 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 		}
 		else
 		{
+			bool isTab = *aValue == '\t';
 			auto& line = mLines[aWhere.mLine];
 			auto d = UTF8CharLength(*aValue);
 			while (d-- > 0 && *aValue != '\0')
 				line.insert(line.begin() + cindex++, Glyph(*aValue++, PaletteIndex::Default));
-			++aWhere.mColumn;
+			aWhere.mColumn += (isTab ? mTabSize : 1);
 		}
 
 		mTextChanged = true;
@@ -1505,7 +1506,6 @@ void TextEditor::RenderInternal(const char* aTitle)
 		ImFont* font = ImGui::GetFont();
 		ImGui::PopFont();
 
-		ImGui::SetNextWindowBgAlpha(0.5f);
 		ImGui::SetNextWindowPos(CoordinatesToScreenPos(acCoord), ImGuiCond_Always);
 		ImGui::BeginChild("##texteditor_autocompl", ImVec2(150, 100), true);
 
@@ -1555,11 +1555,32 @@ void TextEditor::RenderInternal(const char* aTitle)
 		ImGui::SetWindowFocus();
 		mScrollToCursor = false;
 	}
+
+
+	// hacky way to get the bg working
+	if (mACOpened) {
+		auto acCoord = mACPosition;
+		acCoord.mColumn++;
+
+		ImVec2 acPos = CoordinatesToScreenPos(acCoord);
+		
+		drawList->AddRectFilled(acPos, ImVec2(acPos.x + 150, acPos.y + 100), ImGui::GetColorU32(ImGuiCol_FrameBg));
+	}
+	if (mFindOpened)
+	{
+		ImVec2 findPos = ImVec2(mUICursorPos.x + mWindowWidth - 250, mUICursorPos.y + ImGui::GetScrollY() + 50 * IsDebugging());
+		drawList->AddRectFilled(findPos, ImVec2(findPos.x + 220, findPos.y + (mReplaceOpened ? 90 : 40)), ImGui::GetColorU32(ImGuiCol_WindowBg));
+	}
+	if (IsDebugging())
+	{
+		ImVec2 dbgPos = ImVec2(mUICursorPos.x + mWindowWidth/2 - 305/2, mUICursorPos.y + ImGui::GetScrollY());
+		drawList->AddRectFilled(dbgPos, ImVec2(dbgPos.x + 305, dbgPos.y + 40), ImGui::GetColorU32(ImGuiCol_FrameBg));
+	}
 }
 
 ImVec2 TextEditor::CoordinatesToScreenPos(const TextEditor::Coordinates& aPosition) const
 {
-	ImVec2 origin = ImGui::GetCursorScreenPos();
+	ImVec2 origin = mUICursorPos;
 	int dist = 0;
 
 	auto& line = mLines[aPosition.mLine];
@@ -1580,8 +1601,8 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 	mWithinRender = true;
 	mCursorPositionChanged = false;
 
-	ImVec2 findOrigin = ImGui::GetCursorScreenPos();
-	float windowWidth = ImGui::GetWindowWidth();
+	mFindOrigin = ImGui::GetCursorScreenPos();
+	float windowWidth = mWindowWidth = ImGui::GetWindowWidth();
 	
 	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(mPalette[(int)PaletteIndex::Background]));
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
@@ -1639,9 +1660,8 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		ImFont* font = ImGui::GetFont();
 		ImGui::PopFont();
 
-		ImGui::SetNextWindowBgAlpha(0.5f);
-		ImGui::SetNextWindowPos(ImVec2(findOrigin.x + windowWidth - 250, findOrigin.y + 50 * IsDebugging()), ImGuiCond_Always);
-		ImGui::BeginChild(("##ted_findwnd" + std::string(aTitle)).c_str(), ImVec2(220, mReplaceOpened ? 90 : 40), true);
+		ImGui::SetNextWindowPos(ImVec2(mFindOrigin.x + windowWidth - 250, mFindOrigin.y + 50 * IsDebugging()), ImGuiCond_Always);
+		ImGui::BeginChild(("##ted_findwnd" + std::string(aTitle)).c_str(), ImVec2(220, mReplaceOpened ? 90 : 40), true, ImGuiWindowFlags_NoScrollbar);
 
 		// check for findnext shortcut here...
 		ShortcutID curActionID = ShortcutID::Count;
@@ -1871,16 +1891,13 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 	}
 
 	/* DEBUGGER CONTROLS */
-
-	/* FIND TEXT WINDOW */
 	if (IsDebugging())
 	{
 		ImFont* font = ImGui::GetFont();
 		ImGui::PopFont();
 
-		ImGui::SetNextWindowBgAlpha(0.8f);
-		ImGui::SetNextWindowPos(ImVec2(findOrigin.x + windowWidth/2 - 300/2, findOrigin.y), ImGuiCond_Always);
-		ImGui::BeginChild(("##ted_dbgcontrols" + std::string(aTitle)).c_str(), ImVec2(300, 40), true, ImGuiWindowFlags_NoScrollbar);
+		ImGui::SetNextWindowPos(ImVec2(mFindOrigin.x + windowWidth/2 - 305/2, mFindOrigin.y), ImGuiCond_Always);
+		ImGui::BeginChild(("##ted_dbgcontrols" + std::string(aTitle)).c_str(), ImVec2(305, 40), true, ImGuiWindowFlags_NoScrollbar);
 
 		if (ImGui::Button(("Step##ted_dbgstep" + std::string(aTitle)).c_str()) && OnDebuggerAction)
 			OnDebuggerAction(this, TextEditor::DebugAction::Step);
@@ -2715,8 +2732,8 @@ void TextEditor::Backspace()
 			}
 
 			u.mRemovedStart = u.mRemovedEnd = GetActualCursorCoordinates();
-			--u.mRemovedStart.mColumn;
-			--mState.mCursorPosition.mColumn;
+			u.mRemovedStart.mColumn = cindex;
+			mState.mCursorPosition.mColumn = cindex;
 
 			while (cindex < line.size() && cend-- > cindex)
 			{
