@@ -2929,6 +2929,7 @@ const TextEditor::Palette & TextEditor::GetLightPalette()
 		0xff0000ff, // Breakpoint
 		0xff000000, // Breakpoint outline
 		0xFF1DD8FF, // Current line indicator
+		0xFF696969, // Current line indicator outline
 		0xff505000, // Line number
 		0x40000000, // Current line fill
 		0x40808080, // Current line fill (inactive)
