@@ -2732,13 +2732,16 @@ void TextEditor::Backspace()
 			}
 
 			u.mRemovedStart = u.mRemovedEnd = GetActualCursorCoordinates();
-			u.mRemovedStart.mColumn = cindex;
-			mState.mCursorPosition.mColumn = cindex;
 
 			while (cindex < line.size() && cend-- > cindex)
 			{
+				uint8_t chVal = line[cindex].mChar;
+
 				u.mRemoved += line[cindex].mChar;
 				line.erase(line.begin() + cindex);
+
+				u.mRemovedStart.mColumn -= (chVal == '\t') ? mTabSize : 1;
+				mState.mCursorPosition.mColumn -= (chVal == '\t') ? mTabSize : 1;
 			}
 		}
 
