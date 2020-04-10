@@ -1069,11 +1069,10 @@ void TextEditor::HandleMouseInputs()
 	auto ctrl = io.ConfigMacOSXBehaviors ? io.KeySuper : io.KeyCtrl;
 	auto alt = io.ConfigMacOSXBehaviors ? io.KeyCtrl : io.KeyAlt;
 
-	if (ImGui::IsWindowHovered())
-	{
-		if (!shift && !alt)
+	if (ImGui::IsWindowHovered()) {
+		auto click = ImGui::IsMouseClicked(0);
+		if ((!shift || (shift && click)) && !alt)
 		{
-			auto click = ImGui::IsMouseClicked(0);
 			auto doubleClick = ImGui::IsMouseDoubleClicked(0);
 			auto t = ImGui::GetTime();
 			auto tripleClick = click && !doubleClick && (mLastClick != -1.0f && (t - mLastClick) < io.MouseDoubleClickTime);
@@ -1127,11 +1126,17 @@ void TextEditor::HandleMouseInputs()
 					if (HasBreakpoint(lineInfo.mLine))
 						RemoveBreakpoint(lineInfo.mLine);
 					else AddBreakpoint(lineInfo.mLine);
-				}
-				else {
+				} else {
 					mACOpened = false;
-					mState.mCursorPosition = mInteractiveStart = mInteractiveEnd = ScreenPosToCoordinates(ImGui::GetMousePos());
-					if (ctrl)
+
+					auto tcoords = ScreenPosToCoordinates(ImGui::GetMousePos());
+					
+					if (!shift)
+						mInteractiveStart = tcoords;
+					
+					mState.mCursorPosition = mInteractiveEnd = tcoords;
+
+					if (ctrl && !shift)
 						mSelectionMode = SelectionMode::Word;
 					else
 						mSelectionMode = SelectionMode::Normal;
@@ -1146,6 +1151,12 @@ void TextEditor::HandleMouseInputs()
 				io.WantCaptureMouse = true;
 				mState.mCursorPosition = mInteractiveEnd = ScreenPosToCoordinates(ImGui::GetMousePos());
 				SetSelection(mInteractiveStart, mInteractiveEnd, mSelectionMode);
+
+				float mx = ImGui::GetMousePos().x;
+				if (mx > mFindOrigin.x + mWindowWidth - 50 && mx < mFindOrigin.x + mWindowWidth)
+					ImGui::SetScrollX(ImGui::GetScrollX() + 1.0f);
+				else if (mx > mFindOrigin.x && mx < mFindOrigin.x + mTextStart + 50)
+					ImGui::SetScrollX(ImGui::GetScrollX() - 1.0f);
 			}
 
 		}
@@ -1240,6 +1251,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 	snprintf(buf, 16, " %d ", globalLineMax);
 	mTextStart = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x + mLeftMargin;
 
+	
 	if (!mLines.empty())
 	{
 		float spaceSize = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, " ", nullptr, nullptr).x;
@@ -1275,26 +1287,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 				drawList->AddRectFilled(vstart, vend, mPalette[(int)PaletteIndex::Selection]);
 			}
 
-			// Draw breakpoints
 			auto start = ImVec2(lineStartScreenPos.x + scrollX, lineStartScreenPos.y);
-
-			if (HasBreakpoint(lineNo + 1) != 0)
-			{
-				float radius = ImGui::GetFontSize() * 1.0f / 3.0f;
-				float startX = lineStartScreenPos.x + radius + 2.0f;
-				float startY = lineStartScreenPos.y + radius + 4.0f;
-
-				drawList->AddCircle(ImVec2(startX, startY), radius + 1, mPalette[(int)PaletteIndex::BreakpointOutline]);
-				drawList->AddCircleFilled(ImVec2(startX, startY), radius, mPalette[(int)PaletteIndex::Breakpoint]);
-				
-				Breakpoint bkpt = GetBreakpoint(lineNo + 1);
-				if (!bkpt.mEnabled)
-					drawList->AddCircleFilled(ImVec2(startX, startY), radius-1, mPalette[(int)PaletteIndex::BreakpointOutline]);
-				else {
-					if (!bkpt.mCondition.empty())
-						drawList->AddRectFilled(ImVec2(startX-radius+3, startY-radius/4), ImVec2(startX + radius-3, startY + radius / 4), mPalette[(int)PaletteIndex::BreakpointOutline]);
-				}
-			}
 
 			// Draw current line indicator
 			if (lineNo + 1 == mDebugCurrentLine) {
@@ -1344,18 +1337,17 @@ void TextEditor::RenderInternal(const char* aTitle)
 				}
 			}
 
-			// Draw line number (right aligned)
-			if (mShowLineNumbers) {
-				snprintf(buf, 16, "%d  ", lineNo + 1);
-
-				auto lineNoWidth = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x;
-				drawList->AddText(ImVec2(lineStartScreenPos.x + mTextStart - lineNoWidth, lineStartScreenPos.y), mPalette[(int)PaletteIndex::LineNumber], buf);
-			}
-
 			// Highlight the current line (where the cursor is)
 			if (mState.mCursorPosition.mLine == lineNo)
 			{
 				auto focused = ImGui::IsWindowFocused();
+
+				// Highlight the current line (where the cursor is)
+				if (mHighlightLine && !HasSelection()) {
+					auto end = ImVec2(start.x + contentSize.x + scrollX, start.y + mCharAdvance.y + 2.0f);
+					drawList->AddRectFilled(start, end, mPalette[(int)(focused ? PaletteIndex::CurrentLineFill : PaletteIndex::CurrentLineFillInactive)]);
+					drawList->AddRect(start, end, mPalette[(int)PaletteIndex::CurrentLineEdge], 1.0f);
+				}
 
 				// Render the cursor
 				if (focused)
@@ -1460,6 +1452,36 @@ void TextEditor::RenderInternal(const char* aTitle)
 				drawList->AddText(newOffset, prevColor, mLineBuffer.c_str());
 				mLineBuffer.clear();
 			}
+
+			// side bar bg
+			drawList->AddRectFilled(ImVec2(lineStartScreenPos.x + scrollX, lineStartScreenPos.y), ImVec2(lineStartScreenPos.x + scrollX + mTextStart - 5.0f, lineStartScreenPos.y + mCharAdvance.y), ImGui::GetColorU32(ImGuiCol_WindowBg));
+
+			// Draw breakpoints
+			if (HasBreakpoint(lineNo + 1) != 0) {
+				float radius = ImGui::GetFontSize() * 1.0f / 3.0f;
+				float startX = lineStartScreenPos.x + scrollX + radius + 2.0f;
+				float startY = lineStartScreenPos.y + radius + 4.0f;
+
+				drawList->AddCircle(ImVec2(startX, startY), radius + 1, mPalette[(int)PaletteIndex::BreakpointOutline]);
+				drawList->AddCircleFilled(ImVec2(startX, startY), radius, mPalette[(int)PaletteIndex::Breakpoint]);
+
+				Breakpoint bkpt = GetBreakpoint(lineNo + 1);
+				if (!bkpt.mEnabled)
+					drawList->AddCircleFilled(ImVec2(startX, startY), radius - 1, mPalette[(int)PaletteIndex::BreakpointOutline]);
+				else {
+					if (!bkpt.mCondition.empty())
+						drawList->AddRectFilled(ImVec2(startX - radius + 3, startY - radius / 4), ImVec2(startX + radius - 3, startY + radius / 4), mPalette[(int)PaletteIndex::BreakpointOutline]);
+				}
+			}
+
+			// Draw line number (right aligned)
+			if (mShowLineNumbers) {
+				snprintf(buf, 16, "%d  ", lineNo + 1);
+
+				auto lineNoWidth = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x;
+				drawList->AddText(ImVec2(lineStartScreenPos.x + scrollX + mTextStart - lineNoWidth, lineStartScreenPos.y), mPalette[(int)PaletteIndex::LineNumber], buf);
+			}
+
 
 			++lineNo;
 		}
