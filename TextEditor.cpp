@@ -698,8 +698,10 @@ void TextEditor::RemoveLine(int aStart, int aEnd)
 	mBreakpoints.clear();
 	for (auto i : btmp)
 	{
-		if (i.mLine >= aStart && i.mLine <= aEnd)
+		if (i.mLine >= aStart && i.mLine <= aEnd) {
+			RemoveBreakpoint(i.mLine);
 			continue;
+		}
 		AddBreakpoint(i.mLine >= aStart ? i.mLine - 1 : i.mLine, i.mCondition, i.mEnabled);
 	}
 
@@ -728,8 +730,10 @@ void TextEditor::RemoveLine(int aIndex)
 	mBreakpoints.clear();
 	for (auto i : btmp)
 	{
-		if (i.mLine == aIndex)
+		if (i.mLine == aIndex) {
+			RemoveBreakpoint(i.mLine);
 			continue;
+		}
 		AddBreakpoint(i.mLine >= aIndex ? i.mLine - 1 : i.mLine, i.mCondition, i.mEnabled);
 	}
 
@@ -752,6 +756,8 @@ TextEditor::Line& TextEditor::InsertLine(int aIndex)
 
 	auto btmp = mBreakpoints;
 	mBreakpoints.clear();
+	for (auto i : btmp)
+		RemoveBreakpoint(i.mLine);
 	for (auto i : btmp)
 		AddBreakpoint(i.mLine >= aIndex ? i.mLine + 1 : i.mLine, i.mCondition, i.mEnabled);
 
@@ -1189,10 +1195,10 @@ void TextEditor::RemoveBreakpoint(int line)
 	for (int i = 0; i < mBreakpoints.size(); i++)
 		if (mBreakpoints[i].mLine == line) {
 			mBreakpoints.erase(mBreakpoints.begin() + i);
-			if (OnBreakpointRemove)
-				OnBreakpointRemove(this, line);
 			break;
 		}
+	if (OnBreakpointRemove)
+		OnBreakpointRemove(this, line);
 }
 void TextEditor::SetBreakpointEnabled(int line, bool enable)
 {
@@ -1248,7 +1254,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 
 	// Deduce mTextStart by evaluating mLines size (global lineMax) plus two spaces as text width
 	char buf[16];
-	snprintf(buf, 16, " %d ", globalLineMax);
+	snprintf(buf, 16, " %3d ", globalLineMax);
 	mTextStart = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x + mLeftMargin;
 
 	
@@ -1288,33 +1294,6 @@ void TextEditor::RenderInternal(const char* aTitle)
 			}
 
 			auto start = ImVec2(lineStartScreenPos.x + scrollX, lineStartScreenPos.y);
-
-			// Draw current line indicator
-			if (lineNo + 1 == mDebugCurrentLine) {
-				float radius = ImGui::GetFontSize() * 1.0f / 3.0f;
-				float startX = lineStartScreenPos.x + radius + 2.0f;
-				float startY = lineStartScreenPos.y + 4.0f;
-
-				// outline
-				drawList->AddRect(
-					ImVec2(startX - radius, startY + radius / 2), ImVec2(startX, startY + radius * 3.0f / 2.0f),
-					mPalette[(int)PaletteIndex::CurrentLineIndicatorOutline]
-				);
-				drawList->AddTriangle(
-					ImVec2(startX, startY), ImVec2(startX, startY + radius * 2), ImVec2(startX + radius, startY + radius),
-					mPalette[(int)PaletteIndex::CurrentLineIndicatorOutline]
-				);
-
-				// fill
-				drawList->AddRectFilled(
-					ImVec2(startX - radius + 1, startY + 1 + radius / 2), ImVec2(startX + 1, startY - 1 + radius * 3.0f / 2.0f),
-					mPalette[(int)PaletteIndex::CurrentLineIndicator]
-				);
-				drawList->AddTriangleFilled(
-					ImVec2(startX, startY + 1), ImVec2(startX, startY - 1 + radius * 2), ImVec2(startX-1 + radius, startY + radius),
-					mPalette[(int)PaletteIndex::CurrentLineIndicator]
-				);
-			}
 
 			// Draw error markers
 			auto errorIt = mErrorMarkers.find(lineNo + 1);
@@ -1469,14 +1448,38 @@ void TextEditor::RenderInternal(const char* aTitle)
 				if (!bkpt.mEnabled)
 					drawList->AddCircleFilled(ImVec2(startX, startY), radius - 1, mPalette[(int)PaletteIndex::BreakpointOutline]);
 				else {
-					if (!bkpt.mCondition.empty())
-						drawList->AddRectFilled(ImVec2(startX - radius + 3, startY - radius / 4), ImVec2(startX + radius - 3, startY + radius / 4), mPalette[(int)PaletteIndex::BreakpointOutline]);
+					// ENABLE THIS LATER:
+					// if (!bkpt.mCondition.empty())
+					//	drawList->AddRectFilled(ImVec2(startX - radius + 3, startY - radius / 4), ImVec2(startX + radius - 3, startY + radius / 4), mPalette[(int)PaletteIndex::BreakpointOutline]);
 				}
+			}
+
+			// Draw current line indicator
+			if (lineNo + 1 == mDebugCurrentLine) {
+				float radius = ImGui::GetFontSize() * 1.0f / 3.0f;
+				float startX = lineStartScreenPos.x + scrollX + radius + 2.0f;
+				float startY = lineStartScreenPos.y + 4.0f;
+
+				// outline
+				drawList->AddRect(
+					ImVec2(startX - radius, startY + radius / 2), ImVec2(startX, startY + radius * 3.0f / 2.0f),
+					mPalette[(int)PaletteIndex::CurrentLineIndicatorOutline]);
+				drawList->AddTriangle(
+					ImVec2(startX-1, startY-2), ImVec2(startX-1, startY + radius * 2 + 1), ImVec2(startX + radius, startY + radius),
+					mPalette[(int)PaletteIndex::CurrentLineIndicatorOutline]);
+
+				// fill
+				drawList->AddRectFilled(
+					ImVec2(startX - radius + 1, startY + 1 + radius / 2), ImVec2(startX + 1, startY - 1 + radius * 3.0f / 2.0f),
+					mPalette[(int)PaletteIndex::CurrentLineIndicator]);
+				drawList->AddTriangleFilled(
+					ImVec2(startX, startY + 1), ImVec2(startX, startY - 1 + radius * 2), ImVec2(startX - 1 + radius, startY + radius),
+					mPalette[(int)PaletteIndex::CurrentLineIndicator]);
 			}
 
 			// Draw line number (right aligned)
 			if (mShowLineNumbers) {
-				snprintf(buf, 16, "%d  ", lineNo + 1);
+				snprintf(buf, 16, "%3d  ", lineNo + 1);
 
 				auto lineNoWidth = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x;
 				drawList->AddText(ImVec2(lineStartScreenPos.x + scrollX + mTextStart - lineNoWidth, lineStartScreenPos.y), mPalette[(int)PaletteIndex::LineNumber], buf);
@@ -1590,12 +1593,12 @@ void TextEditor::RenderInternal(const char* aTitle)
 	}
 	if (mFindOpened)
 	{
-		ImVec2 findPos = ImVec2(mUICursorPos.x + mWindowWidth - 250, mUICursorPos.y + ImGui::GetScrollY() + 50 * IsDebugging());
+		ImVec2 findPos = ImVec2(mUICursorPos.x + scrollX + mWindowWidth - 250, mUICursorPos.y + ImGui::GetScrollY() + 50 * IsDebugging());
 		drawList->AddRectFilled(findPos, ImVec2(findPos.x + 220, findPos.y + (mReplaceOpened ? 90 : 40)), ImGui::GetColorU32(ImGuiCol_WindowBg));
 	}
 	if (IsDebugging())
 	{
-		ImVec2 dbgPos = ImVec2(mUICursorPos.x + mWindowWidth/2 - 305/2, mUICursorPos.y + ImGui::GetScrollY());
+		ImVec2 dbgPos = ImVec2(mUICursorPos.x + scrollX + mWindowWidth/2 - 305/2, mUICursorPos.y + ImGui::GetScrollY());
 		drawList->AddRectFilled(dbgPos, ImVec2(dbgPos.x + 305, dbgPos.y + 40), ImGui::GetColorU32(ImGuiCol_FrameBg));
 	}
 }
@@ -1662,6 +1665,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 			if (HasBreakpoint(line)) {
 				const auto& bkpt = GetBreakpoint(line);
 				bool isEnabled = bkpt.mEnabled;
+				/*
 				if (ImGui::Selectable("Condition")) {
 					mPopupCondition_Line = line;
 					mPopupCondition_Use = !bkpt.mCondition.empty();
@@ -1669,6 +1673,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 					mPopupCondition_Condition[std::min<size_t>(511, bkpt.mCondition.size())] = 0;
 					openBkptConditionWindow = true;
 				}
+				*/
 				if (ImGui::Selectable(isEnabled ? "Disable" : "Enable")) { SetBreakpointEnabled(line, !isEnabled); }
 				if (ImGui::Selectable("Delete")) { RemoveBreakpoint(line); }
 			}
@@ -1774,15 +1779,17 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		}
 		ImGui::PopItemWidth();
 
-		ImGui::SameLine();
-		if (ImGui::ArrowButton(("##expandFind" + std::string(aTitle)).c_str(), mReplaceOpened ? ImGuiDir_Up : ImGuiDir_Down))
-			mReplaceOpened = !mReplaceOpened;
+		if (!mReadOnly) {
+			ImGui::SameLine();
+			if (ImGui::ArrowButton(("##expandFind" + std::string(aTitle)).c_str(), mReplaceOpened ? ImGuiDir_Up : ImGuiDir_Down))
+				mReplaceOpened = !mReplaceOpened;
+		}
 
 		ImGui::SameLine();
 		if (ImGui::Button(("X##" + std::string(aTitle)).c_str()))
 			mFindOpened = false;
 
-		if (mReplaceOpened) {
+		if (mReplaceOpened && !mReadOnly) {
 			ImGui::PushItemWidth(-45);
 			ImGui::NewLine();
 			bool shouldReplace = false;
@@ -2949,16 +2956,16 @@ const TextEditor::Palette & TextEditor::GetLightPalette()
 		0xff405020, // Comment (multi line)
 		0xffffffff, // Background
 		0xff000000, // Cursor
-		0x80600000, // Selection
+		0x80DFBF80, // Selection
 		0xa00010ff, // ErrorMarker
 		0xff0000ff, // Breakpoint
 		0xff000000, // Breakpoint outline
 		0xFF1DD8FF, // Current line indicator
 		0xFF696969, // Current line indicator outline
 		0xff505000, // Line number
-		0x40000000, // Current line fill
-		0x40808080, // Current line fill (inactive)
-		0x40000000, // Current line edge
+		0x20000000, // Current line fill
+		0x20808080, // Current line fill (inactive)
+		0x30000000, // Current line edge
 		0xff3333ff, // Error message
 	} };
 	return p;
@@ -3338,8 +3345,8 @@ void TextEditor::EnsureCursorVisible()
 	float scrollY = ImGui::GetScrollY();
 
 	auto height = ImGui::GetWindowHeight();
-	auto width = ImGui::GetWindowWidth();
-
+	auto width = mWindowWidth;
+	
 	auto top = 1 + (int)ceil(scrollY / mCharAdvance.y);
 	auto bottom = (int)ceil((scrollY + height) / mCharAdvance.y);
 
@@ -3353,10 +3360,10 @@ void TextEditor::EnsureCursorVisible()
 		ImGui::SetScrollY(std::max(0.0f, (pos.mLine - 1) * mCharAdvance.y));
 	if (pos.mLine > bottom - 4)
 		ImGui::SetScrollY(std::max(0.0f, (pos.mLine + 4) * mCharAdvance.y - height));
-	if (len + mTextStart < left + 4)
-		ImGui::SetScrollX(std::max(0.0f, len + mTextStart - 4));
-	if (len + mTextStart > right - 4)
-		ImGui::SetScrollX(std::max(0.0f, len + mTextStart + 4 - width));
+	if (pos.mColumn < left + 4)
+		ImGui::SetScrollX(std::max(0.0f, len + mTextStart - 11 * mCharAdvance.x));
+	if (len + mTextStart > (right - 4) * mCharAdvance.x)
+		ImGui::SetScrollX(std::max(0.0f, len + mTextStart + 4 * mCharAdvance.x - width));
 }
 void TextEditor::SetCurrentLineIndicator(int line) {
 	mDebugCurrentLine = line;
