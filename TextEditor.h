@@ -205,6 +205,10 @@ public:
 
 	struct Identifier
 	{
+		Identifier() { }
+		Identifier(const std::string& declr) :
+			mDeclaration(declr) { }
+
 		Coordinates mLocation;
 		std::string mDeclaration;
 	};
