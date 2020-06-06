@@ -69,6 +69,7 @@ TextEditor::TextEditor()
 	, mDebugCurrentLineUpdated(false)
 	, mDebugCurrentLine(-1)
 	, mPath("")
+	, OnContentUpdate(nullptr)
 	, mFuncTooltips(true)
 	, mStartTime(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
 {
@@ -360,6 +361,8 @@ void TextEditor::DeleteRange(const Coordinates & aStart, const Coordinates & aEn
 	}
 
 	mTextChanged = true;
+	if (OnContentUpdate != nullptr)
+		OnContentUpdate(this);
 }
 
 int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValue)
@@ -407,6 +410,8 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 		}
 
 		mTextChanged = true;
+		if (OnContentUpdate != nullptr)
+			OnContentUpdate(this);
 	}
 
 	return totalLines;
@@ -709,6 +714,8 @@ void TextEditor::RemoveLine(int aStart, int aEnd)
 	assert(!mLines.empty());
 
 	mTextChanged = true;
+	if (OnContentUpdate != nullptr)
+		OnContentUpdate(this);
 }
 
 void TextEditor::RemoveLine(int aIndex)
@@ -741,6 +748,8 @@ void TextEditor::RemoveLine(int aIndex)
 	assert(!mLines.empty());
 
 	mTextChanged = true;
+	if (OnContentUpdate != nullptr)
+		OnContentUpdate(this);
 }
 
 TextEditor::Line& TextEditor::InsertLine(int aIndex)
@@ -2160,6 +2169,8 @@ void TextEditor::EnterCharacter(ImWchar aChar, bool aShift)
 				AddUndo(u);
 
 				mTextChanged = true;
+				if (OnContentUpdate != nullptr)
+					OnContentUpdate(this);
 
 				EnsureCursorVisible();
 			}
@@ -2239,6 +2250,8 @@ void TextEditor::EnterCharacter(ImWchar aChar, bool aShift)
 	}
 
 	mTextChanged = true;
+	if (OnContentUpdate != nullptr)
+		OnContentUpdate(this);
 
 	u.mAddedEnd = GetActualCursorCoordinates();
 	u.mAfter = mState;
@@ -2688,6 +2701,8 @@ void TextEditor::Delete()
 		}
 
 		mTextChanged = true;
+		if (OnContentUpdate != nullptr)
+			OnContentUpdate(this);
 
 		Colorize(pos.mLine, 1);
 	}
@@ -2775,6 +2790,8 @@ void TextEditor::Backspace()
 		}
 
 		mTextChanged = true;
+		if (OnContentUpdate != nullptr)
+			OnContentUpdate(this);
 
 		EnsureCursorVisible();
 		Colorize(mState.mCursorPosition.mLine, 1);

@@ -400,6 +400,8 @@ public:
 	std::function<void(TextEditor*, int)> OnBreakpointRemove;
 	std::function<void(TextEditor*, int, const std::string&, bool)> OnBreakpointUpdate;
 
+	std::function<void(TextEditor*)> OnContentUpdate;
+
 	inline void SetPath(const std::string& path) { mPath = path; }
 	inline const std::string& GetPath() { return mPath; }
 
