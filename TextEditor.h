@@ -373,6 +373,11 @@ public:
 	inline void SetHorizontalScroll(bool s) { mHorizontalScroll = s; }
 	inline void SetSmartPredictions(bool s) { mAutocomplete = s; }
 	inline void SetFunctionTooltips(bool s) { mFuncTooltips = s; }
+	inline void SetActiveAutocomplete(bool cac) { mActiveAutocomplete = cac; }
+
+	inline void SetUIScale(float scale) { mUIScale = scale; }
+	inline void SetUIFontSize(float size) { mUIFontSize = size; }
+	inline void SetEditorFontSize(float size) { mEditorFontSize = size; }
 
 	void SetShortcut(TextEditor::ShortcutID id, Shortcut s);
 
@@ -492,6 +497,16 @@ private:
 
 	bool mFuncTooltips;
 
+	float mUIScale, mUIFontSize, mEditorFontSize;
+	inline float mUICalculateSize(float h)
+	{
+		return h * (mUIScale + mUIFontSize / 18.0f - 1.0f);
+	}
+	inline float mEditorCalculateSize(float h)
+	{
+		return h * (mUIScale + mEditorFontSize / 18.0f - 1.0f);
+	}
+
 	float mLineSpacing;
 	Lines mLines;
 	EditorState mState;
@@ -506,6 +521,10 @@ private:
 	bool mReplaceOpened;
 	char mReplaceWord[256];
 
+
+	bool m_requestAutocomplete, m_readyForAutocomplete;
+	void m_buildSuggestions(bool* keepACOpened = nullptr);
+	bool mActiveAutocomplete;
 	bool mAutocomplete;
 	std::string mACWord;
 	std::vector<std::string> mACSuggestions;

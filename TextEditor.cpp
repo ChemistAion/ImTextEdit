@@ -71,6 +71,12 @@ TextEditor::TextEditor()
 	, mPath("")
 	, OnContentUpdate(nullptr)
 	, mFuncTooltips(true)
+	, mUIScale(1.0f)
+	, mUIFontSize(18.0f)
+	, mEditorFontSize(18.0f)
+	, mActiveAutocomplete(false)
+	, m_readyForAutocomplete(false)
+	, m_requestAutocomplete(false)
 	, mStartTime(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
 {
 
@@ -943,49 +949,8 @@ void TextEditor::HandleKeyboardInputs()
 				case ShortcutID::SelectAll: SelectAll(); break;
 				case ShortcutID::AutocompleteOpen: 
 				{
-					mACWord = GetWordUnderCursor();
-
-					bool isValid = false;
-					for (int i = 0; i < mACWord.size(); i++)
-						if ((mACWord[i] >= 'a' && mACWord[i] <= 'z') || (mACWord[i] >= 'A' && mACWord[i] <= 'Z'))
-						{
-							isValid = true;
-							break;
-						}
-
-					if (isValid) {
-						mACSuggestions.clear();
-						mACIndex = 0;
-						mACSwitched = false;
-
-						// starting with the written word
-						for (auto& str : mLanguageDefinition.mKeywords)
-							if (str.find(mACWord) == 0)
-								mACSuggestions.push_back(str);
-
-						for (auto& str : mLanguageDefinition.mIdentifiers)
-							if (str.first.find(mACWord) == 0)
-								mACSuggestions.push_back(str.first);
-
-						// containing the word
-						for (auto& str : mLanguageDefinition.mKeywords) {
-							size_t ind = str.find(mACWord);
-							if (ind > 0 && ind != std::string::npos)
-								mACSuggestions.push_back(str);
-						}
-
-						for (auto& str : mLanguageDefinition.mIdentifiers) {
-							size_t ind = str.first.find(mACWord);
-							if (ind > 0 && ind != std::string::npos)
-								mACSuggestions.push_back(str.first);
-						}
-
-						if (mACSuggestions.size() > 0) {
-							mACOpened = true;
-							keepACOpened = true;
-							mACPosition = GetCursorPosition();
-						}
-					}
+					if (mAutocomplete)
+						m_buildSuggestions(&keepACOpened);
 				} break;
 				case ShortcutID::AutocompleteSelect: 
 				case ShortcutID::AutocompleteSelectActive:
@@ -1067,12 +1032,19 @@ void TextEditor::HandleKeyboardInputs()
 			io.InputQueueCharacters.resize(0);
 		}
 
-		if (mACOpened) {
+		// active autocomplete
+		if (m_requestAutocomplete && m_readyForAutocomplete) {
+			m_buildSuggestions(&keepACOpened);
+			m_requestAutocomplete = false;
+			m_readyForAutocomplete = false;
+		}
+
+		if (mACOpened && !keepACOpened) {
 			for (size_t i = 0; i < ImGuiKey_COUNT; i++)
 				keyCount += ImGui::IsKeyPressed(ImGui::GetKeyIndex(i));
 
-			if (keyCount != 0 && !keepACOpened)
-				mACOpened = false;
+			if (keyCount != 0)
+				mACOpened = false; 
 		}
 	}
 }
@@ -1134,7 +1106,7 @@ void TextEditor::HandleMouseInputs()
 			{
 				ImVec2 pos = ImGui::GetMousePos();
 
-				if (pos.x - mUICursorPos.x < ImGui::GetStyle().WindowPadding.x + DebugDataSpace) {
+				if (pos.x - mUICursorPos.x < ImGui::GetStyle().WindowPadding.x + mEditorCalculateSize(DebugDataSpace)) {
 					Coordinates lineInfo = ScreenPosToCoordinates(ImGui::GetMousePos());
 					lineInfo.mLine += 1;
 
@@ -1535,13 +1507,16 @@ void TextEditor::RenderInternal(const char* aTitle)
 	// suggestions window
 	if (mACOpened) {
 		auto acCoord = mACPosition;
-		acCoord.mColumn++;
+		acCoord.mLine++;
 
+		ImVec2 acPos = CoordinatesToScreenPos(acCoord);
+		drawList->AddRectFilled(acPos, ImVec2(acPos.x + mUICalculateSize(150), acPos.y + mUICalculateSize(100)), ImGui::GetColorU32(ImGuiCol_FrameBg));
+	
 		ImFont* font = ImGui::GetFont();
 		ImGui::PopFont();
 
-		ImGui::SetNextWindowPos(CoordinatesToScreenPos(acCoord), ImGuiCond_Always);
-		ImGui::BeginChild("##texteditor_autocompl", ImVec2(150, 100), true);
+		ImGui::SetNextWindowPos(acPos, ImGuiCond_Always);
+		ImGui::BeginChild("##texteditor_autocompl", ImVec2(mUICalculateSize(150), mUICalculateSize(100)), true);
 
 		for (int i = 0; i < mACSuggestions.size(); i++) {
 			ImGui::Selectable(mACSuggestions[i].c_str(), i == mACIndex);
@@ -1558,7 +1533,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 			mACOpened = false;
 	}
 
-	ImGui::Dummy(ImVec2((longest + 2), mLines.size() * mCharAdvance.y));
+	ImGui::Dummy(ImVec2(longest + mEditorCalculateSize(100), mLines.size() * mCharAdvance.y));
 
 	if (mDebugCurrentLineUpdated) {
 		float scrollX = ImGui::GetScrollX();
@@ -1590,25 +1565,69 @@ void TextEditor::RenderInternal(const char* aTitle)
 		mScrollToCursor = false;
 	}
 
-
+	
 	// hacky way to get the bg working
-	if (mACOpened) {
-		auto acCoord = mACPosition;
-		acCoord.mColumn++;
-
-		ImVec2 acPos = CoordinatesToScreenPos(acCoord);
-		
-		drawList->AddRectFilled(acPos, ImVec2(acPos.x + 150, acPos.y + 100), ImGui::GetColorU32(ImGuiCol_FrameBg));
-	}
 	if (mFindOpened)
 	{
-		ImVec2 findPos = ImVec2(mUICursorPos.x + scrollX + mWindowWidth - 250, mUICursorPos.y + ImGui::GetScrollY() + 50 * IsDebugging());
-		drawList->AddRectFilled(findPos, ImVec2(findPos.x + 220, findPos.y + (mReplaceOpened ? 90 : 40)), ImGui::GetColorU32(ImGuiCol_WindowBg));
+		ImVec2 findPos = ImVec2(mUICursorPos.x + scrollX + mWindowWidth - mUICalculateSize(250), mUICursorPos.y + ImGui::GetScrollY() + mUICalculateSize(50) * IsDebugging());
+		drawList->AddRectFilled(findPos, ImVec2(findPos.x + mUICalculateSize(220), findPos.y + mUICalculateSize(mReplaceOpened ? 90 : 40)), ImGui::GetColorU32(ImGuiCol_WindowBg));
 	}
 	if (IsDebugging())
 	{
-		ImVec2 dbgPos = ImVec2(mUICursorPos.x + scrollX + mWindowWidth/2 - 305/2, mUICursorPos.y + ImGui::GetScrollY());
-		drawList->AddRectFilled(dbgPos, ImVec2(dbgPos.x + 305, dbgPos.y + 40), ImGui::GetColorU32(ImGuiCol_FrameBg));
+		ImVec2 dbgPos = ImVec2(mUICursorPos.x + scrollX + mWindowWidth / 2 - 305 * mUIScale / 2, mUICursorPos.y + ImGui::GetScrollY());
+		drawList->AddRectFilled(dbgPos, ImVec2(dbgPos.x + 305 * mUIScale, dbgPos.y + 40 * mUIScale), ImGui::GetColorU32(ImGuiCol_FrameBg));
+	}
+}
+
+void TextEditor::m_buildSuggestions(bool* keepACOpened)
+{
+	mACWord = GetWordUnderCursor();
+
+	bool isValid = false;
+	for (int i = 0; i < mACWord.size(); i++)
+		if ((mACWord[i] >= 'a' && mACWord[i] <= 'z') || (mACWord[i] >= 'A' && mACWord[i] <= 'Z')) {
+			isValid = true;
+			break;
+		}
+
+	if (isValid) {
+		mACSuggestions.clear();
+		mACIndex = 0;
+		mACSwitched = false;
+
+		// starting with the written word
+		for (auto& str : mLanguageDefinition.mKeywords)
+			if (str.find(mACWord) == 0)
+				mACSuggestions.push_back(str);
+
+		for (auto& str : mLanguageDefinition.mIdentifiers)
+			if (str.first.find(mACWord) == 0)
+				mACSuggestions.push_back(str.first);
+
+		// containing the word
+		for (auto& str : mLanguageDefinition.mKeywords) {
+			size_t ind = str.find(mACWord);
+			if (ind > 0 && ind != std::string::npos)
+				mACSuggestions.push_back(str);
+		}
+
+		for (auto& str : mLanguageDefinition.mIdentifiers) {
+			size_t ind = str.first.find(mACWord);
+			if (ind > 0 && ind != std::string::npos)
+				mACSuggestions.push_back(str.first);
+		}
+
+		if (mACSuggestions.size() > 0) {
+			mACOpened = true;
+
+			if (keepACOpened != nullptr)
+				*keepACOpened = true;
+
+			Coordinates curCursor = GetCursorPosition();
+			curCursor.mColumn--;
+
+			mACPosition = FindWordStart(curCursor);
+		}
 	}
 }
 
@@ -1654,10 +1673,13 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		HandleMouseInputs();
 
 	ColorizeInternal();
+	m_readyForAutocomplete = true;
 	RenderInternal(aTitle);
 
-	if (ImGui::IsMouseClicked(1))
+	if (ImGui::IsMouseClicked(1)) {
 		mRightClickPos = ImGui::GetMousePos();
+		SetCursorPosition(ScreenPosToCoordinates(mRightClickPos));
+	}
 
 	bool openBkptConditionWindow = false;
 	if (ImGui::BeginPopupContextItem(("##edcontext" + std::string(aTitle)).c_str())) {
@@ -1696,8 +1718,8 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		ImFont* font = ImGui::GetFont();
 		ImGui::PopFont();
 
-		ImGui::SetNextWindowPos(ImVec2(mFindOrigin.x + windowWidth - 250, mFindOrigin.y + 50 * IsDebugging()), ImGuiCond_Always);
-		ImGui::BeginChild(("##ted_findwnd" + std::string(aTitle)).c_str(), ImVec2(220, mReplaceOpened ? 90 : 40), true, ImGuiWindowFlags_NoScrollbar);
+		ImGui::SetNextWindowPos(ImVec2(mFindOrigin.x + windowWidth - mUICalculateSize(250), mFindOrigin.y + mUICalculateSize(50) * IsDebugging()), ImGuiCond_Always);
+		ImGui::BeginChild(("##ted_findwnd" + std::string(aTitle)).c_str(), ImVec2(mUICalculateSize(220), mUICalculateSize(mReplaceOpened ? 90 : 40)), true, ImGuiWindowFlags_NoScrollbar);
 
 		// check for findnext shortcut here...
 		ShortcutID curActionID = ShortcutID::Count;
@@ -1730,7 +1752,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 				strcpy(mFindWord, txt.c_str());
 		}
 
-		ImGui::PushItemWidth(-45);
+		ImGui::PushItemWidth(mUICalculateSize(-45));
 		if (ImGui::InputText(("##ted_findtextbox" + std::string(aTitle)).c_str(), mFindWord, 256, ImGuiInputTextFlags_EnterReturnsTrue) || mFindNext) {
 			auto curPos = mState.mCursorPosition;
 			size_t cindex = 0;
@@ -1799,7 +1821,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 			mFindOpened = false;
 
 		if (mReplaceOpened && !mReadOnly) {
-			ImGui::PushItemWidth(-45);
+			ImGui::PushItemWidth(mUICalculateSize(-45));
 			ImGui::NewLine();
 			bool shouldReplace = false;
 			if (ImGui::InputText(("##ted_replacetb" + std::string(aTitle)).c_str(), mReplaceWord, 256, ImGuiInputTextFlags_EnterReturnsTrue))
@@ -1934,8 +1956,8 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		ImFont* font = ImGui::GetFont();
 		ImGui::PopFont();
 
-		ImGui::SetNextWindowPos(ImVec2(mFindOrigin.x + windowWidth/2 - 305/2, mFindOrigin.y), ImGuiCond_Always);
-		ImGui::BeginChild(("##ted_dbgcontrols" + std::string(aTitle)).c_str(), ImVec2(305, 40), true, ImGuiWindowFlags_NoScrollbar);
+		ImGui::SetNextWindowPos(ImVec2(mFindOrigin.x + windowWidth/2 - 305*mUIScale/2, mFindOrigin.y), ImGuiCond_Always);
+		ImGui::BeginChild(("##ted_dbgcontrols" + std::string(aTitle)).c_str(), ImVec2(305 * mUIScale, 40 * mUIScale), true, ImGuiWindowFlags_NoScrollbar);
 
 		if (ImGui::Button(("Step##ted_dbgstep" + std::string(aTitle)).c_str()) && OnDebuggerAction)
 			OnDebuggerAction(this, TextEditor::DebugAction::Step);
@@ -2247,6 +2269,12 @@ void TextEditor::EnterCharacter(ImWchar aChar, bool aShift)
 		}
 		else
 			return;
+	}
+		
+	// active suggestions
+	if (mActiveAutocomplete && isalpha(aChar)) {
+		m_requestAutocomplete = true;
+		m_readyForAutocomplete = false;
 	}
 
 	mTextChanged = true;
