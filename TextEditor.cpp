@@ -1506,10 +1506,10 @@ void TextEditor::RenderInternal(const char* aTitle)
 
 	// suggestions window
 	if (mACOpened) {
-		auto acCoord = mACPosition;
-		acCoord.mLine++;
-
+		auto acCoord = FindWordStart(mACPosition);
 		ImVec2 acPos = CoordinatesToScreenPos(acCoord);
+		acPos.y += mCharAdvance.y;
+
 		drawList->AddRectFilled(acPos, ImVec2(acPos.x + mUICalculateSize(150), acPos.y + mUICalculateSize(100)), ImGui::GetColorU32(ImGuiCol_FrameBg));
 	
 		ImFont* font = ImGui::GetFont();
@@ -1634,14 +1634,7 @@ void TextEditor::m_buildSuggestions(bool* keepACOpened)
 ImVec2 TextEditor::CoordinatesToScreenPos(const TextEditor::Coordinates& aPosition) const
 {
 	ImVec2 origin = mUICursorPos;
-	int dist = 0;
-
-	auto& line = mLines[aPosition.mLine];
-	for (int i = 0; i < std::min(line.size(), (size_t)aPosition.mColumn); i++) {
-		if (line[i].mChar == '\t')
-			dist += mTabSize;
-		else dist++;
-	}
+	int dist = aPosition.mColumn;
 
 	int retY = origin.y + aPosition.mLine * mCharAdvance.y;
 	int retX = origin.x + GetTextStart() * mCharAdvance.x + dist * mCharAdvance.x - ImGui::GetScrollX();
@@ -2272,7 +2265,7 @@ void TextEditor::EnterCharacter(ImWchar aChar, bool aShift)
 	}
 		
 	// active suggestions
-	if (mActiveAutocomplete && isalpha(aChar)) {
+	if (mActiveAutocomplete && aChar <= 127 && isalpha(aChar)) {
 		m_requestAutocomplete = true;
 		m_readyForAutocomplete = false;
 	}
