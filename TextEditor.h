@@ -12,11 +12,9 @@
 #include <regex>
 #include <imgui/imgui.h>
 
-class TextEditor
-{
+class TextEditor {
 public:
-	enum class PaletteIndex
-	{
+	enum class PaletteIndex {
 		Default,
 		Keyword,
 		Number,
@@ -42,11 +40,17 @@ public:
 		CurrentLineFillInactive,
 		CurrentLineEdge,
 		ErrorMessage,
+		BreakpointDisabled,
+		UserFunction,
+		UserType,
+		UniformVariable,
+		GlobalVariable,
+		LocalVariable,
+		FunctionArgument,
 		Max
 	};
 
-	enum class ShortcutID
-	{
+	enum class ShortcutID {
 		Undo,
 		Redo,
 		MoveUp,
@@ -107,9 +111,8 @@ public:
 
 	static const int LineNumberSpace = 20;
 	static const int DebugDataSpace = 10;
-	
-	struct Shortcut
-	{
+
+	struct Shortcut {
 		// 0 - not used, 1 - used
 		bool Alt;
 		bool Ctrl;
@@ -119,27 +122,32 @@ public:
 		int Key1;
 		int Key2;
 
-		Shortcut(int vk1 = -1, int vk2 = -2, bool alt = 0, bool ctrl = 0, bool shift = 0) :
-			Key1(vk1), Key2(vk2), Alt(alt), Ctrl(ctrl), Shift(shift) { }
+		Shortcut(int vk1 = -1, int vk2 = -2, bool alt = 0, bool ctrl = 0, bool shift = 0)
+				: Key1(vk1)
+				, Key2(vk2)
+				, Alt(alt)
+				, Ctrl(ctrl)
+				, Shift(shift)
+		{
+		}
 	};
 
-	enum class SelectionMode
-	{
+	enum class SelectionMode {
 		Normal,
 		Word,
 		Line
 	};
 
-	struct Breakpoint
-	{
+	struct Breakpoint {
 		int mLine;
 		bool mEnabled;
 		std::string mCondition;
 
 		Breakpoint()
-			: mLine(-1)
-			, mEnabled(false)
-		{}
+				: mLine(-1)
+				, mEnabled(false)
+		{
+		}
 	};
 
 	// Represents a character coordinate from the user's point of view,
@@ -149,53 +157,58 @@ public:
 	// how many space is necessary to reach the next tab stop.
 	// For example, coordinate (1, 5) represents the character 'B' in a line "\tABC", when mTabSize = 4,
 	// because it is rendered as "    ABC" on the screen.
-	struct Coordinates
-	{
+	struct Coordinates {
 		int mLine, mColumn;
-		Coordinates() : mLine(0), mColumn(0) {}
-		Coordinates(int aLine, int aColumn) : mLine(aLine), mColumn(aColumn)
+		Coordinates()
+				: mLine(0)
+				, mColumn(0)
+		{
+		}
+		Coordinates(int aLine, int aColumn)
+				: mLine(aLine)
+				, mColumn(aColumn)
 		{
 			assert(aLine >= 0);
 			assert(aColumn >= 0);
 		}
-		static Coordinates Invalid() { static Coordinates invalid(-1, -1); return invalid; }
-
-		bool operator ==(const Coordinates& o) const
+		static Coordinates Invalid()
 		{
-			return
-				mLine == o.mLine &&
-				mColumn == o.mColumn;
+			static Coordinates invalid(-1, -1);
+			return invalid;
 		}
 
-		bool operator !=(const Coordinates& o) const
+		bool operator==(const Coordinates& o) const
 		{
-			return
-				mLine != o.mLine ||
-				mColumn != o.mColumn;
+			return mLine == o.mLine && mColumn == o.mColumn;
 		}
 
-		bool operator <(const Coordinates& o) const
+		bool operator!=(const Coordinates& o) const
+		{
+			return mLine != o.mLine || mColumn != o.mColumn;
+		}
+
+		bool operator<(const Coordinates& o) const
 		{
 			if (mLine != o.mLine)
 				return mLine < o.mLine;
 			return mColumn < o.mColumn;
 		}
 
-		bool operator >(const Coordinates& o) const
+		bool operator>(const Coordinates& o) const
 		{
 			if (mLine != o.mLine)
 				return mLine > o.mLine;
 			return mColumn > o.mColumn;
 		}
 
-		bool operator <=(const Coordinates& o) const
+		bool operator<=(const Coordinates& o) const
 		{
 			if (mLine != o.mLine)
 				return mLine < o.mLine;
 			return mColumn <= o.mColumn;
 		}
 
-		bool operator >=(const Coordinates& o) const
+		bool operator>=(const Coordinates& o) const
 		{
 			if (mLine != o.mLine)
 				return mLine > o.mLine;
@@ -203,11 +216,12 @@ public:
 		}
 	};
 
-	struct Identifier
-	{
-		Identifier() { }
-		Identifier(const std::string& declr) :
-			mDeclaration(declr) { }
+	struct Identifier {
+		Identifier() {}
+		Identifier(const std::string& declr)
+				: mDeclaration(declr)
+		{
+		}
 
 		Coordinates mLocation;
 		std::string mDeclaration;
@@ -220,26 +234,30 @@ public:
 	typedef std::array<ImU32, (unsigned)PaletteIndex::Max> Palette;
 	typedef uint8_t Char;
 
-	struct Glyph
-	{
+	struct Glyph {
 		Char mChar;
 		PaletteIndex mColorIndex = PaletteIndex::Default;
 		bool mComment : 1;
 		bool mMultiLineComment : 1;
 		bool mPreprocessor : 1;
 
-		Glyph(Char aChar, PaletteIndex aColorIndex) : mChar(aChar), mColorIndex(aColorIndex),
-			mComment(false), mMultiLineComment(false), mPreprocessor(false) {}
+		Glyph(Char aChar, PaletteIndex aColorIndex)
+				: mChar(aChar)
+				, mColorIndex(aColorIndex)
+				, mComment(false)
+				, mMultiLineComment(false)
+				, mPreprocessor(false)
+		{
+		}
 	};
 
 	typedef std::vector<Glyph> Line;
 	typedef std::vector<Line> Lines;
 
-	struct LanguageDefinition
-	{
+	struct LanguageDefinition {
 		typedef std::pair<std::string, PaletteIndex> TokenRegexString;
 		typedef std::vector<TokenRegexString> TokenRegexStrings;
-		typedef bool(*TokenizeCallback)(const char * in_begin, const char * in_end, const char *& out_begin, const char *& out_end, PaletteIndex & paletteIndex);
+		typedef bool (*TokenizeCallback)(const char* in_begin, const char* in_end, const char*& out_begin, const char*& out_end, PaletteIndex& paletteIndex);
 
 		std::string mName;
 		Keywords mKeywords;
@@ -256,7 +274,10 @@ public:
 		bool mCaseSensitive;
 
 		LanguageDefinition()
-			: mPreprocChar('#'), mAutoIndentation(true), mTokenize(nullptr), mCaseSensitive(true)
+				: mPreprocChar('#')
+				, mAutoIndentation(true)
+				, mTokenize(nullptr)
+				, mCaseSensitive(true)
 		{
 		}
 
@@ -275,7 +296,7 @@ public:
 
 	TextEditor();
 	~TextEditor();
-	
+
 	void SetLanguageDefinition(const LanguageDefinition& aLanguageDef);
 	const LanguageDefinition& GetLanguageDefinition() const { return mLanguageDefinition; }
 
@@ -299,10 +320,10 @@ public:
 	std::string GetText() const;
 
 	void SetTextLines(const std::vector<std::string>& aLines);
-	std::vector<std::string> GetTextLines() const;
+	void GetTextLines(std::vector<std::string>& out) const;
 
 	std::string GetSelectedText() const;
-	std::string GetCurrentLineText()const;
+	std::string GetCurrentLineText() const;
 
 	int GetTotalLines() const { return (int)mLines.size(); }
 	bool IsOverwrite() const { return mOverwrite; }
@@ -320,13 +341,13 @@ public:
 	Coordinates GetCursorPosition() const { return GetActualCursorCoordinates(); }
 	void SetCursorPosition(const Coordinates& aPosition);
 
-	inline void SetHandleMouseInputs    (bool aValue){ mHandleMouseInputs    = aValue;}
+	inline void SetHandleMouseInputs(bool aValue) { mHandleMouseInputs = aValue; }
 	inline bool IsHandleMouseInputsEnabled() const { return mHandleKeyboardInputs; }
 
-	inline void SetHandleKeyboardInputs (bool aValue){ mHandleKeyboardInputs = aValue;}
+	inline void SetHandleKeyboardInputs(bool aValue) { mHandleKeyboardInputs = aValue; }
 	inline bool IsHandleKeyboardInputsEnabled() const { return mHandleKeyboardInputs; }
 
-	inline void SetImGuiChildIgnored    (bool aValue){ mIgnoreImGuiChild     = aValue;}
+	inline void SetImGuiChildIgnored(bool aValue) { mIgnoreImGuiChild = aValue; }
 	inline bool IsImGuiChildIgnored() const { return mIgnoreImGuiChild; }
 
 	inline void SetShowWhitespaces(bool aValue) { mShowWhitespaces = aValue; }
@@ -381,8 +402,63 @@ public:
 
 	void SetShortcut(TextEditor::ShortcutID id, Shortcut s);
 
-	inline void SetShowLineNumbers(bool s) { mShowLineNumbers = s; mTextStart = (s ? 20 : 6); mLeftMargin = (s ? (DebugDataSpace + LineNumberSpace) : (DebugDataSpace - LineNumberSpace)); }
+	inline void SetShowLineNumbers(bool s)
+	{
+		mShowLineNumbers = s;
+		mTextStart = (s ? 20 : 6);
+		mLeftMargin = (s ? (DebugDataSpace + LineNumberSpace) : (DebugDataSpace - LineNumberSpace));
+	}
 	inline int GetTextStart() const { return mShowLineNumbers ? 7 : 3; }
+
+	void Colorize(int aFromLine = 0, int aCount = -1);
+	void ColorizeRange(int aFromLine = 0, int aToLine = 0);
+	void ColorizeInternal();
+
+	struct FunctionData {
+		FunctionData()
+		{
+			LineStart = -1;
+			LineEnd = -1;
+		}
+		FunctionData(int lineStart, int lineEnd, const std::vector<std::string>& args, const std::vector<std::string>& locals)
+		{
+			LineStart = lineStart;
+			LineEnd = lineEnd;
+			Arguments = args;
+			Locals = locals;
+		}
+		int LineStart;
+		int LineEnd;
+		std::vector<std::string> Arguments;
+		std::vector<std::string> Locals;
+	};
+	inline void ClearAutocompleteData() 
+	{
+		mACFunctions.clear();
+		mACUserTypes.clear();
+		mACUniforms.clear();
+		mACGlobals.clear();
+	}
+	inline const std::unordered_map<std::string, FunctionData>& GetAutocompleteFunctions() { return mACFunctions; }
+	inline const std::vector<std::string>& GetAutocompleteUserTypes() { return mACUserTypes; }
+	inline const std::vector<std::string>& GetAutocompleteUniforms() { return mACUniforms; }
+	inline const std::vector<std::string>& GetAutocompleteGlobals() { return mACGlobals; }
+	inline void AddAutocompleteFunction(const std::string& fname, int lineStart, int lineEnd, const std::vector<std::string>& args, const std::vector<std::string>& locals)
+	{
+		mACFunctions[fname] = FunctionData(lineStart, lineEnd, args, locals);
+	}
+	inline void AddAutocompleteUserType(const std::string& fname)
+	{
+		mACUserTypes.push_back(fname);
+	}
+	inline void AddAutocompleteUniform(const std::string& fname)
+	{
+		mACUniforms.push_back(fname);
+	}
+	inline void AddAutocompleteGlobal(const std::string& fname)
+	{
+		mACGlobals.push_back(fname);
+	}
 	
 	static const std::vector<Shortcut> GetDefaultShortcuts();
 	static const Palette& GetDarkPalette();
@@ -458,9 +534,6 @@ private:
 	typedef std::vector<UndoRecord> UndoBuffer;
 
 	void ProcessInputs();
-	void Colorize(int aFromLine = 0, int aCount = -1);
-	void ColorizeRange(int aFromLine = 0, int aToLine = 0);
-	void ColorizeInternal();
 	float TextDistanceToLineStart(const Coordinates& aFrom) const;
 	void EnsureCursorVisible();
 	int GetPageSize() const;
@@ -506,6 +579,9 @@ private:
 	{
 		return h * (mUIScale + mEditorFontSize / 18.0f - 1.0f);
 	}
+
+	std::unordered_map<std::string, FunctionData> mACFunctions;
+	std::vector<std::string> mACUserTypes, mACUniforms, mACGlobals;
 
 	float mLineSpacing;
 	Lines mLines;
