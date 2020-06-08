@@ -965,6 +965,8 @@ void TextEditor::HandleKeyboardInputs()
 					Backspace();
 					InsertText(mACSuggestions[mACIndex]);
 					
+					
+					m_requestAutocomplete = false;
 					mACOpened = false;
 				}
 				break;
@@ -2820,6 +2822,12 @@ void TextEditor::Backspace()
 
 	u.mAfter = mState;
 	AddUndo(u);
+
+	// autocomplete
+	if (mActiveAutocomplete && mACOpened) {
+		m_requestAutocomplete = true;
+		m_readyForAutocomplete = false;
+	}
 }
 
 void TextEditor::SelectWordUnderCursor()
