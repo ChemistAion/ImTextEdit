@@ -1429,7 +1429,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 
 				Breakpoint bkpt = GetBreakpoint(lineNo + 1);
 				if (!bkpt.mEnabled)
-					drawList->AddCircleFilled(ImVec2(startX, startY), radius - 1, mPalette[(int)PaletteIndex::BreakpointOutline]);
+					drawList->AddCircleFilled(ImVec2(startX, startY), radius - 1, mPalette[(int)PaletteIndex::BreakpointDisabled]);
 				else {
 					// ENABLE THIS LATER:
 					// if (!bkpt.mCondition.empty())
