@@ -1757,7 +1757,9 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 
 	if (ImGui::IsMouseClicked(1)) {
 		mRightClickPos = ImGui::GetMousePos();
-		SetCursorPosition(ScreenPosToCoordinates(mRightClickPos));
+		
+		if (ImGui::IsWindowHovered())
+			SetCursorPosition(ScreenPosToCoordinates(mRightClickPos));
 	}
 
 	bool openBkptConditionWindow = false;
