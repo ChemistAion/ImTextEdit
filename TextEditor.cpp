@@ -3968,7 +3968,8 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::HLSL()
 			"float1x1","float2x1","float3x1","float4x1","float1x2","float2x2","float3x2","float4x2",
 			"float1x3","float2x3","float3x3","float4x3","float1x4","float2x4","float3x4","float4x4",
 			"half1x1","half2x1","half3x1","half4x1","half1x2","half2x2","half3x2","half4x2",
-			"half1x3","half2x3","half3x3","half4x3","half1x4","half2x4","half3x4","half4x4"
+			"half1x3","half2x3","half3x3","half4x3","half1x4","half2x4","half3x4","half4x4",
+			"SHADERED_WEB", "SHADERED_DESKTOP", "SHADERED_VERSION"
 		};
 		for (auto& k : keywords)
 			langDef.mKeywords.insert(k);
@@ -4154,7 +4155,8 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::GLSL()
 			"lowp", "mediump", "highp", "precision", "sampler1D", "sampler2D", "sampler3D", "samplerCube", "sampler1DShadow", "sampler2DShadow", "samplerCubeShadow", "sampler1DArray", "sampler2DArray", "sampler1DArrayShadow",
 			"sampler2DArrayShadow", "isampler1D", "isampler2D", "isampler3D", "isamplerCube", "isampler1DArray", "isampler2DArray", "usampler1D", "usampler2D", "usampler3D", "usamplerCube", "usampler1DArray", "usampler2DArray",
 			"sampler2DRect", "sampler2DRectShadow", "isampler2DRect", "usampler2DRect", "samplerBuffer", "isamplerBuffer", "usamplerBuffer", "sampler2DMS", "isampler2DMS", "usampler2DMS", "sampler2DMSArray", "isampler2DMSArray",
-			"usampler2DMSArray", "samplerCubeArray", "samplerCubeArrayShadow", "isamplerCubeArray", "usamplerCubeArray"
+			"usampler2DMSArray", "samplerCubeArray", "samplerCubeArrayShadow", "isamplerCubeArray", "usamplerCubeArray",
+			"SHADERED_WEB", "SHADERED_DESKTOP", "SHADERED_VERSION"
 		};
 		for (auto& k : keywords)
 			langDef.mKeywords.insert(k);
