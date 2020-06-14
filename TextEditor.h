@@ -603,7 +603,7 @@ private:
 	bool mActiveAutocomplete;
 	bool mAutocomplete;
 	std::string mACWord;
-	std::vector<std::string> mACSuggestions;
+	std::vector<std::pair<std::string, bool>> mACSuggestions;
 	int mACIndex;
 	bool mACOpened;
 	bool mACSwitched; // if == true then allow selection with enter

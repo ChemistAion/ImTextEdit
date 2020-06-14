@@ -960,11 +960,17 @@ void TextEditor::HandleKeyboardInputs()
 					
 					auto acStart = FindWordStart(curCoord);
 					auto acEnd = FindWordEnd(curCoord);
+
+					const auto& acEntry = mACSuggestions[mACIndex];
 					
 					SetSelection(acStart, acEnd);
 					Backspace();
-					InsertText(mACSuggestions[mACIndex]);
+					InsertText(acEntry.first);
 					
+					if (acEntry.second && mCompleteBraces) {
+						InsertText("()");
+						mState.mCursorPosition.mColumn = std::max(0, mState.mCursorPosition.mColumn - 1);
+					}
 					
 					m_requestAutocomplete = false;
 					mACOpened = false;
@@ -1519,9 +1525,9 @@ void TextEditor::RenderInternal(const char* aTitle)
 
 		ImGui::SetNextWindowPos(acPos, ImGuiCond_Always);
 		ImGui::BeginChild("##texteditor_autocompl", ImVec2(mUICalculateSize(150), mUICalculateSize(100)), true);
-
+		
 		for (int i = 0; i < mACSuggestions.size(); i++) {
-			ImGui::Selectable(mACSuggestions[i].c_str(), i == mACIndex);
+			ImGui::Selectable(mACSuggestions[i].first.c_str(), i == mACIndex);
 			if (i == mACIndex)
 				ImGui::SetScrollHereY();
 		}
@@ -1597,26 +1603,23 @@ void TextEditor::m_buildSuggestions(bool* keepACOpened)
 		mACIndex = 0;
 		mACSwitched = false;
 
-		std::vector<std::pair<std::string, int>> weights;
+		struct ACEntry {
+			ACEntry(const std::string& str, int loc, bool brks)
+			{
+				String = str;
+				Location = loc;
+				Brackets = brks;
+			}
+
+			std::string String;
+			int Location;
+			bool Brackets;
+		};
+		std::vector<ACEntry> weights;
 
 		std::string acWord = mACWord;
 		std::transform(acWord.begin(), acWord.end(), acWord.begin(), tolower);
-		/*struct MyStructure
-{
-	int Value;
-};
 
-int myFunction(int arg)
-{
-	int local = 5;
-	return arg * local;
-}
-
-void main()
-{
-	MyStructure object;
-	myFunction(object.Value);
-	*/
 		// get the words
 		for (auto& func : mACFunctions) {
 			std::string lwrStr = func.first;
@@ -1632,7 +1635,7 @@ void main()
 
 					size_t loc = lwrLoc.find(acWord);
 					if (loc != std::string::npos)
-						weights.push_back(std::make_pair(str, loc));
+						weights.push_back(ACEntry(str, loc, false));
 				}
 
 				// arguments
@@ -1642,13 +1645,13 @@ void main()
 
 					size_t loc = lwrLoc.find(acWord);
 					if (loc != std::string::npos)
-						weights.push_back(std::make_pair(str, loc));
+						weights.push_back(ACEntry(str, loc, false));
 				}
 			}
 
 			size_t loc = lwrStr.find(acWord);
 			if (loc != std::string::npos)
-				weights.push_back(std::make_pair(func.first, loc));
+				weights.push_back(ACEntry(func.first, loc, true));
 		}
 		for (auto& str : mACUniforms) {
 			std::string lwrStr = str;
@@ -1656,7 +1659,7 @@ void main()
 
 			size_t loc = lwrStr.find(acWord);
 			if (loc != std::string::npos)
-				weights.push_back(std::make_pair(str, loc));
+				weights.push_back(ACEntry(str, loc, false));
 		}
 		for (auto& str : mACGlobals) {
 			std::string lwrStr = str;
@@ -1664,7 +1667,7 @@ void main()
 
 			size_t loc = lwrStr.find(acWord);
 			if (loc != std::string::npos)
-				weights.push_back(std::make_pair(str, loc));
+				weights.push_back(ACEntry(str, loc, false));
 		}
 		for (auto& str : mACUserTypes) {
 			std::string lwrStr = str;
@@ -1672,7 +1675,7 @@ void main()
 
 			size_t loc = lwrStr.find(acWord);
 			if (loc != std::string::npos)
-				weights.push_back(std::make_pair(str, loc));
+				weights.push_back(ACEntry(str, loc, false));
 		}
 		for (auto& str : mLanguageDefinition.mKeywords) {
 			std::string lwrStr = str;
@@ -1680,7 +1683,7 @@ void main()
 
 			size_t loc = lwrStr.find(acWord);
 			if (loc != std::string::npos)
-				weights.push_back(std::make_pair(str, loc));
+				weights.push_back(ACEntry(str, loc, false));
 		}
 		for (auto& str : mLanguageDefinition.mIdentifiers) {
 			std::string lwrStr = str.first;
@@ -1688,16 +1691,16 @@ void main()
 
 			size_t loc = lwrStr.find(acWord);
 			if (loc != std::string::npos)
-				weights.push_back(std::make_pair(str.first, loc));
+				weights.push_back(ACEntry(str.first, loc, true));
 		}
 
 		// build the actual list
-		for (const auto& pair : weights)
-			if (pair.second == 0)
-				mACSuggestions.push_back(pair.first);
-		for (const auto& pair : weights)
-			if (pair.second != 0)
-				mACSuggestions.push_back(pair.first);
+		for (const auto& entry : weights)
+			if (entry.Location == 0)
+				mACSuggestions.push_back(std::make_pair(entry.String, entry.Brackets));
+		for (const auto& entry : weights)
+			if (entry.Location != 0)
+				mACSuggestions.push_back(std::make_pair(entry.String, entry.Brackets));
 
 
 		if (mACSuggestions.size() > 0) {
@@ -2872,10 +2875,16 @@ void TextEditor::Backspace()
 			//if (cindex > 0 && UTF8CharLength(line[cindex].mChar) > 1)
 			//	--cindex;
 
-			if (mCompleteBraces && pos.mColumn < line.size()) {
-				if ((line[pos.mColumn - 1].mChar == '(' && line[pos.mColumn].mChar == ')') ||
-					(line[pos.mColumn - 1].mChar == '{' && line[pos.mColumn].mChar == '}') ||
-					(line[pos.mColumn - 1].mChar == '[' && line[pos.mColumn].mChar == ']'))
+			int actualLoc = pos.mColumn;
+			for (int i = 0; i < line.size(); i++) {
+				if (line[i].mChar == '\t')
+					actualLoc -= GetTabSize() - 1;
+			}
+
+			if (mCompleteBraces && actualLoc > 0 && actualLoc < line.size()) {
+				if ((line[actualLoc - 1].mChar == '(' && line[actualLoc].mChar == ')') ||
+					(line[actualLoc - 1].mChar == '{' && line[actualLoc].mChar == '}') ||
+					(line[actualLoc - 1].mChar == '[' && line[actualLoc].mChar == ']'))
 					Delete();
 			}
 
