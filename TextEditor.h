@@ -438,6 +438,8 @@ public:
 		mACUserTypes.clear();
 		mACUniforms.clear();
 		mACGlobals.clear();
+		mACEntries.clear();
+		mACEntrySearch.clear();
 	}
 	inline const std::unordered_map<std::string, FunctionData>& GetAutocompleteFunctions() { return mACFunctions; }
 	inline const std::vector<std::string>& GetAutocompleteUserTypes() { return mACUserTypes; }
@@ -458,6 +460,11 @@ public:
 	inline void AddAutocompleteGlobal(const std::string& fname)
 	{
 		mACGlobals.push_back(fname);
+	}
+	inline void AddAutocompleteEntry(const std::string& search, const std::string& display, const std::string& value)
+	{
+		mACEntrySearch.push_back(search);
+		mACEntries.push_back(std::make_pair(display, value));
 	}
 	
 	static const std::vector<Shortcut> GetDefaultShortcuts();
@@ -580,9 +587,6 @@ private:
 		return h * (mUIScale + mEditorFontSize / 18.0f - 1.0f);
 	}
 
-	std::unordered_map<std::string, FunctionData> mACFunctions;
-	std::vector<std::string> mACUserTypes, mACUniforms, mACGlobals;
-
 	float mLineSpacing;
 	Lines mLines;
 	EditorState mState;
@@ -597,13 +601,17 @@ private:
 	bool mReplaceOpened;
 	char mReplaceWord[256];
 
+	std::vector<std::string> mACEntrySearch;
+	std::vector<std::pair<std::string, std::string>> mACEntries;
 
 	bool m_requestAutocomplete, m_readyForAutocomplete;
 	void m_buildSuggestions(bool* keepACOpened = nullptr);
 	bool mActiveAutocomplete;
 	bool mAutocomplete;
+	std::unordered_map<std::string, FunctionData> mACFunctions;
+	std::vector<std::string> mACUserTypes, mACUniforms, mACGlobals;
 	std::string mACWord;
-	std::vector<std::pair<std::string, bool>> mACSuggestions;
+	std::vector<std::pair<std::string, std::string>> mACSuggestions;
 	int mACIndex;
 	bool mACOpened;
 	bool mACSwitched; // if == true then allow selection with enter

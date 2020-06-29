@@ -965,12 +965,7 @@ void TextEditor::HandleKeyboardInputs()
 					
 					SetSelection(acStart, acEnd);
 					Backspace();
-					InsertText(acEntry.first);
-					
-					if (acEntry.second && mCompleteBraces) {
-						InsertText("()");
-						mState.mCursorPosition.mColumn = std::max(0, mState.mCursorPosition.mColumn - 1);
-					}
+					InsertText(acEntry.second);
 					
 					m_requestAutocomplete = false;
 					mACOpened = false;
@@ -1604,16 +1599,16 @@ void TextEditor::m_buildSuggestions(bool* keepACOpened)
 		mACSwitched = false;
 
 		struct ACEntry {
-			ACEntry(const std::string& str, int loc, bool brks)
+			ACEntry(const std::string& str, const std::string& val, int loc)
 			{
-				String = str;
+				DisplayString = str;
+				Value = val;
 				Location = loc;
-				Brackets = brks;
 			}
 
-			std::string String;
+			std::string DisplayString;
+			std::string Value;
 			int Location;
-			bool Brackets;
 		};
 		std::vector<ACEntry> weights;
 
@@ -1621,6 +1616,14 @@ void TextEditor::m_buildSuggestions(bool* keepACOpened)
 		std::transform(acWord.begin(), acWord.end(), acWord.begin(), tolower);
 
 		// get the words
+		for (int i = 0; i < mACEntrySearch.size(); i++) {
+			std::string lwrStr = mACEntrySearch[i];
+			std::transform(lwrStr.begin(), lwrStr.end(), lwrStr.begin(), tolower);
+
+			size_t loc = lwrStr.find(acWord);
+			if (loc != std::string::npos)
+				weights.push_back(ACEntry(mACEntries[i].first, mACEntries[i].second, loc));
+		}
 		for (auto& func : mACFunctions) {
 			std::string lwrStr = func.first;
 			std::transform(lwrStr.begin(), lwrStr.end(), lwrStr.begin(), tolower);
@@ -1635,7 +1638,7 @@ void TextEditor::m_buildSuggestions(bool* keepACOpened)
 
 					size_t loc = lwrLoc.find(acWord);
 					if (loc != std::string::npos)
-						weights.push_back(ACEntry(str, loc, false));
+						weights.push_back(ACEntry(str, str, loc));
 				}
 
 				// arguments
@@ -1645,13 +1648,16 @@ void TextEditor::m_buildSuggestions(bool* keepACOpened)
 
 					size_t loc = lwrLoc.find(acWord);
 					if (loc != std::string::npos)
-						weights.push_back(ACEntry(str, loc, false));
+						weights.push_back(ACEntry(str, str, loc));
 				}
 			}
 
 			size_t loc = lwrStr.find(acWord);
-			if (loc != std::string::npos)
-				weights.push_back(ACEntry(func.first, loc, true));
+			if (loc != std::string::npos) {
+				std::string val = func.first;
+				if (mCompleteBraces) val += "()";
+				weights.push_back(ACEntry(func.first, val, loc));
+			}
 		}
 		for (auto& str : mACUniforms) {
 			std::string lwrStr = str;
@@ -1659,7 +1665,7 @@ void TextEditor::m_buildSuggestions(bool* keepACOpened)
 
 			size_t loc = lwrStr.find(acWord);
 			if (loc != std::string::npos)
-				weights.push_back(ACEntry(str, loc, false));
+				weights.push_back(ACEntry(str, str, loc));
 		}
 		for (auto& str : mACGlobals) {
 			std::string lwrStr = str;
@@ -1667,7 +1673,7 @@ void TextEditor::m_buildSuggestions(bool* keepACOpened)
 
 			size_t loc = lwrStr.find(acWord);
 			if (loc != std::string::npos)
-				weights.push_back(ACEntry(str, loc, false));
+				weights.push_back(ACEntry(str, str, loc));
 		}
 		for (auto& str : mACUserTypes) {
 			std::string lwrStr = str;
@@ -1675,7 +1681,7 @@ void TextEditor::m_buildSuggestions(bool* keepACOpened)
 
 			size_t loc = lwrStr.find(acWord);
 			if (loc != std::string::npos)
-				weights.push_back(ACEntry(str, loc, false));
+				weights.push_back(ACEntry(str, str, loc));
 		}
 		for (auto& str : mLanguageDefinition.mKeywords) {
 			std::string lwrStr = str;
@@ -1683,7 +1689,7 @@ void TextEditor::m_buildSuggestions(bool* keepACOpened)
 
 			size_t loc = lwrStr.find(acWord);
 			if (loc != std::string::npos)
-				weights.push_back(ACEntry(str, loc, false));
+				weights.push_back(ACEntry(str, str, loc));
 		}
 		for (auto& str : mLanguageDefinition.mIdentifiers) {
 			std::string lwrStr = str.first;
@@ -1691,16 +1697,16 @@ void TextEditor::m_buildSuggestions(bool* keepACOpened)
 
 			size_t loc = lwrStr.find(acWord);
 			if (loc != std::string::npos)
-				weights.push_back(ACEntry(str.first, loc, true));
+				weights.push_back(ACEntry(str.first, str.first, loc));
 		}
-
+		
 		// build the actual list
 		for (const auto& entry : weights)
 			if (entry.Location == 0)
-				mACSuggestions.push_back(std::make_pair(entry.String, entry.Brackets));
+				mACSuggestions.push_back(std::make_pair(entry.DisplayString, entry.Value));
 		for (const auto& entry : weights)
 			if (entry.Location != 0)
-				mACSuggestions.push_back(std::make_pair(entry.String, entry.Brackets));
+				mACSuggestions.push_back(std::make_pair(entry.DisplayString, entry.Value));
 
 
 		if (mACSuggestions.size() > 0) {
@@ -2353,7 +2359,7 @@ void TextEditor::EnterCharacter(ImWchar aChar, bool aShift)
 	}
 		
 	// active suggestions
-	if (mActiveAutocomplete && aChar <= 127 && isalpha(aChar)) {
+	if (mActiveAutocomplete && aChar <= 127 && (isalpha(aChar) || aChar == '_')) {
 		m_requestAutocomplete = true;
 		m_readyForAutocomplete = false;
 	}
