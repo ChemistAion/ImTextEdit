@@ -1512,6 +1512,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 		auto acCoord = FindWordStart(mACPosition);
 		ImVec2 acPos = CoordinatesToScreenPos(acCoord);
 		acPos.y += mCharAdvance.y;
+		acPos.x += ImGui::GetScrollX();
 
 		drawList->AddRectFilled(acPos, ImVec2(acPos.x + mUICalculateSize(150), acPos.y + mUICalculateSize(100)), ImGui::GetColorU32(ImGuiCol_FrameBg));
 	
