@@ -485,6 +485,8 @@ public:
 	std::function<void(TextEditor*, DebugAction)> OnDebuggerAction;
 	std::function<void(TextEditor*, const std::string&)> OnIdentifierHover;
 	std::function<bool(TextEditor*, const std::string&)> HasIdentifierHover;
+	std::function<void(TextEditor*, const std::string&)> OnExpressionHover;
+	std::function<bool(TextEditor*, const std::string&)> HasExpressionHover;
 	std::function<void(TextEditor*, int)> OnBreakpointRemove;
 	std::function<void(TextEditor*, int, const std::string&, bool)> OnBreakpointUpdate;
 
@@ -552,6 +554,7 @@ private:
 	int InsertTextAt(Coordinates& aWhere, const char* aValue);
 	void AddUndo(UndoRecord& aValue);
 	Coordinates ScreenPosToCoordinates(const ImVec2& aPosition) const;
+	Coordinates MousePosToCoordinates(const ImVec2& aPosition) const;
 	ImVec2 CoordinatesToScreenPos(const TextEditor::Coordinates& aPosition) const;
 	Coordinates FindWordStart(const Coordinates& aFrom) const;
 	Coordinates FindWordEnd(const Coordinates& aFrom) const;
@@ -666,6 +669,9 @@ private:
 	Coordinates mInteractiveStart, mInteractiveEnd;
 	std::string mLineBuffer;
 	uint64_t mStartTime;
+
+	Coordinates mLastHoverPosition;
+	std::chrono::steady_clock::time_point mLastHoverTime;
 
 	float mLastClick;
 };
