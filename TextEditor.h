@@ -395,6 +395,7 @@ public:
 	inline void SetSmartPredictions(bool s) { mAutocomplete = s; }
 	inline void SetFunctionTooltips(bool s) { mFuncTooltips = s; }
 	inline void SetActiveAutocomplete(bool cac) { mActiveAutocomplete = cac; }
+	inline void SetScrollbarMarkers(bool markers) { mScrollbarMarkers = markers; }
 
 	inline void SetUIScale(float scale) { mUIScale = scale; }
 	inline void SetUIFontSize(float size) { mUIFontSize = size; }
@@ -622,6 +623,7 @@ private:
 
 	std::vector<Shortcut> m_shortcuts;
 
+	bool mScrollbarMarkers;
 	bool mHorizontalScroll;
 	bool mCompleteBraces;
 	bool mShowLineNumbers;

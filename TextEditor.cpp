@@ -79,6 +79,7 @@ TextEditor::TextEditor()
 	, mActiveAutocomplete(false)
 	, m_readyForAutocomplete(false)
 	, m_requestAutocomplete(false)
+	, mScrollbarMarkers(false)
 	, mStartTime(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
 {
 
@@ -1868,6 +1869,27 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 	m_readyForAutocomplete = true;
 	RenderInternal(aTitle);
 
+	// markers
+	if (mScrollbarMarkers) {
+		ImGuiWindow* window = ImGui::GetCurrentWindowRead();
+		if (window->ScrollbarY) {
+			ImDrawList* drawList = ImGui::GetWindowDrawList();
+			ImRect scrollBarRect = ImGui::GetWindowScrollbarRect(window, ImGuiAxis_Y);
+			ImGui::PushClipRect(scrollBarRect.Min, scrollBarRect.Max, false);
+			int mSelectedLine = mState.mCursorPosition.mLine;
+			if (mSelectedLine != 0) {
+				float lineStartY = std::round(scrollBarRect.Min.y + (mSelectedLine - 0.5f) / mLines.size() * scrollBarRect.GetHeight());
+				drawList->AddLine(ImVec2(scrollBarRect.Min.x, lineStartY), ImVec2(scrollBarRect.Max.x, lineStartY), (mPalette[(int)PaletteIndex::Default] & 0x00FFFFFFu) | 0x83000000u, 3);
+			}
+
+			for (auto& error : mErrorMarkers) {
+				float lineStartY = std::round(scrollBarRect.Min.y + (float(error.first) - 0.5f) / mLines.size() * scrollBarRect.GetHeight());
+				drawList->AddRectFilled(ImVec2(scrollBarRect.Min.x, lineStartY), ImVec2(scrollBarRect.Min.x + scrollBarRect.GetWidth() * 0.4f, lineStartY + 6.0f), mPalette[(int)PaletteIndex::ErrorMarker]);
+			}
+			ImGui::PopClipRect();
+		}
+	}
+
 	if (ImGui::IsMouseClicked(1)) {
 		mRightClickPos = ImGui::GetMousePos();
 		
@@ -2188,6 +2210,8 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 	if (openBkptConditionWindow)
 		ImGui::OpenPopup("Condition##condition");
 
+	ImFont* font = ImGui::GetFont();
+	ImGui::PopFont();
 	ImGui::SetNextWindowSize(ImVec2(430, 175), ImGuiCond_Once);
 	if (ImGui::BeginPopupModal("Condition##condition")) {
 		if (ImGui::Checkbox("Use condition", &mPopupCondition_Use)) {
@@ -2226,7 +2250,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		}
 		ImGui::EndPopup();
 	}
-
+	ImGui::PushFont(font);
 
 	mWithinRender = false;
 }
