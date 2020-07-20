@@ -353,8 +353,8 @@ public:
 	inline void SetShowWhitespaces(bool aValue) { mShowWhitespaces = aValue; }
 	inline bool IsShowingWhitespaces() const { return mShowWhitespaces; }
 
-	void InsertText(const std::string& aValue);
-	void InsertText(const char* aValue);
+	void InsertText(const std::string& aValue, bool indent = false);
+	void InsertText(const char* aValue, bool indent = false);
 
 	void MoveUp(int aAmount = 1, bool aSelect = false);
 	void MoveDown(int aAmount = 1, bool aSelect = false);
@@ -389,6 +389,7 @@ public:
 	inline int GetInsertSpaces() { return mInsertSpaces; }
 
 	inline void SetSmartIndent(bool s) { mSmartIndent = s; }
+	inline void SetAutoIndentOnPaste(bool s) { mAutoindentOnPaste = s; }
 	inline void SetHighlightLine(bool s) { mHighlightLine = s; }
 	inline void SetCompleteBraces(bool s) { mCompleteBraces = s; }
 	inline void SetHorizontalScroll(bool s) { mHorizontalScroll = s; }
@@ -552,7 +553,7 @@ private:
 	Coordinates SanitizeCoordinates(const Coordinates& aValue) const;
 	void Advance(Coordinates& aCoordinates) const;
 	void DeleteRange(const Coordinates& aStart, const Coordinates& aEnd);
-	int InsertTextAt(Coordinates& aWhere, const char* aValue);
+	int InsertTextAt(Coordinates& aWhere, const char* aValue, bool indent = false);
 	void AddUndo(UndoRecord& aValue);
 	Coordinates ScreenPosToCoordinates(const ImVec2& aPosition) const;
 	Coordinates MousePosToCoordinates(const ImVec2& aPosition) const;
@@ -648,6 +649,7 @@ private:
 	bool mHandleMouseInputs;
 	bool mIgnoreImGuiChild;
 	bool mShowWhitespaces;
+	bool mAutoindentOnPaste;
 
 	Palette mPaletteBase;
 	Palette mPalette;

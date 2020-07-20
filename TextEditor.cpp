@@ -80,9 +80,9 @@ TextEditor::TextEditor()
 	, m_readyForAutocomplete(false)
 	, m_requestAutocomplete(false)
 	, mScrollbarMarkers(false)
+	, mAutoindentOnPaste(false)
 	, mStartTime(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
 {
-
 	memset(mFindWord, 0, 256 * sizeof(char));
 	memset(mReplaceWord, 0, 256 * sizeof(char));
 	mFindOpened = false;
@@ -377,12 +377,25 @@ void TextEditor::DeleteRange(const Coordinates & aStart, const Coordinates & aEn
 		OnContentUpdate(this);
 }
 
-int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValue)
+int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValue, bool indent)
 {
 	assert(!mReadOnly);
 
+	bool shouldAutoIndent = mAutoindentOnPaste && indent;
+
+	int autoIndentStart = 0;
+	for (int i = 0; i < mLines[aWhere.mLine].size() && shouldAutoIndent; i++) {
+		Char ch = mLines[aWhere.mLine][i].mChar;
+		if (ch == ' ')
+			autoIndentStart++;
+		else if (ch == '\t')
+			autoIndentStart += mTabSize;
+		else break;
+	}
+
 	int cindex = GetCharacterIndex(aWhere);
 	int totalLines = 0;
+	int autoIndent = autoIndentStart;
 	while (*aValue != '\0')
 	{
 		assert(!mLines.empty());
@@ -406,13 +419,43 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 				InsertLine(aWhere.mLine + 1);
 			}
 			++aWhere.mLine;
-			aWhere.mColumn = 0;
 			cindex = 0;
+			aWhere.mColumn = 0;
 			++totalLines;
 			++aValue;
+
+			if (shouldAutoIndent) {
+				bool lineIsAlreadyIndent = (isspace(*aValue) && *aValue != '\n' && *aValue != '\r');
+
+				// first check if we need to "unindent"
+				const char* bracketSearch = aValue;
+				while (*bracketSearch != '\0' && isspace(*bracketSearch) && *bracketSearch != '\n')
+					bracketSearch++;
+				if (*bracketSearch == '}')
+					autoIndent = std::max(0, autoIndent - autoIndentStart);
+
+				int actualAutoIndent = autoIndent;
+				if (lineIsAlreadyIndent)
+					actualAutoIndent = autoIndentStart;
+
+				// add tabs
+				int tabCount = actualAutoIndent / mTabSize;
+				int spaceCount = actualAutoIndent - tabCount * mTabSize;
+
+				cindex = tabCount + spaceCount;
+				aWhere.mColumn = actualAutoIndent;
+
+				while (spaceCount-- > 0)
+					mLines[aWhere.mLine].insert(mLines[aWhere.mLine].begin(), Glyph(' ', PaletteIndex::Default));
+				while (tabCount-- > 0)
+					mLines[aWhere.mLine].insert(mLines[aWhere.mLine].begin(), Glyph('\t', PaletteIndex::Default));
+			}
 		}
 		else
 		{
+			if (*aValue == '{')
+				autoIndent += autoIndentStart;
+
 			bool isTab = *aValue == '\t';
 			auto& line = mLines[aWhere.mLine];
 			auto d = UTF8CharLength(*aValue);
@@ -420,11 +463,11 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 				line.insert(line.begin() + cindex++, Glyph(*aValue++, PaletteIndex::Default));
 			aWhere.mColumn += (isTab ? mTabSize : 1);
 		}
-
-		mTextChanged = true;
-		if (OnContentUpdate != nullptr)
-			OnContentUpdate(this);
 	}
+
+	mTextChanged = true;
+	if (OnContentUpdate != nullptr)
+		OnContentUpdate(this);
 
 	return totalLines;
 }
@@ -2592,12 +2635,12 @@ void TextEditor::SetSelection(const Coordinates & aStart, const Coordinates & aE
 		mCursorPositionChanged = true;
 }
 
-void TextEditor::InsertText(const std::string & aValue)
+void TextEditor::InsertText(const std::string& aValue, bool indent)
 {
-	InsertText(aValue.c_str());
+	InsertText(aValue.c_str(), indent);
 }
 
-void TextEditor::InsertText(const char * aValue)
+void TextEditor::InsertText(const char* aValue, bool indent)
 {
 	if (aValue == nullptr)
 		return;
@@ -2606,7 +2649,7 @@ void TextEditor::InsertText(const char * aValue)
 	auto start = std::min<Coordinates>(pos, mState.mSelectionStart);
 	int totalLines = pos.mLine - start.mLine;
 
-	totalLines += InsertTextAt(pos, aValue);
+	totalLines += InsertTextAt(pos, aValue, indent);
 
 	SetSelection(pos, pos);
 	SetCursorPosition(pos);
@@ -2830,7 +2873,7 @@ void TextEditor::MoveTop(bool aSelect)
 	}
 }
 
-void TextEditor::TextEditor::MoveBottom(bool aSelect)
+void TextEditor::MoveBottom(bool aSelect)
 {
 	auto oldPos = GetCursorPosition();
 	auto newPos = Coordinates((int)mLines.size() - 1, 0);
@@ -3150,7 +3193,7 @@ void TextEditor::Paste()
 		u.mAdded = clipText;
 		u.mAddedStart = GetActualCursorCoordinates();
 
-		InsertText(clipText);
+		InsertText(clipText, true);
 
 		u.mAddedEnd = GetActualCursorCoordinates();
 		u.mAfter = mState;
@@ -3218,9 +3261,6 @@ const TextEditor::Palette & TextEditor::GetDarkPalette()
 	} };
 	return p;
 }
-
-struct Test {
-};
 
 const TextEditor::Palette & TextEditor::GetLightPalette()
 {
