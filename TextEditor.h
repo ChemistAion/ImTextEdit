@@ -397,6 +397,8 @@ public:
 	inline void SetFunctionTooltips(bool s) { mFuncTooltips = s; }
 	inline void SetActiveAutocomplete(bool cac) { mActiveAutocomplete = cac; }
 	inline void SetScrollbarMarkers(bool markers) { mScrollbarMarkers = markers; }
+	inline void SetSidebarVisible(bool s) { mSidebar = s; }
+	inline void SetSearchEnabled(bool s) { mHasSearch = s; }
 
 	inline void SetUIScale(float scale) { mUIScale = scale; }
 	inline void SetUIFontSize(float size) { mUIFontSize = size; }
@@ -440,6 +442,9 @@ public:
 		mACUserTypes.clear();
 		mACUniforms.clear();
 		mACGlobals.clear();
+	}
+	inline void ClearAutocompleteEntries()
+	{
 		mACEntries.clear();
 		mACEntrySearch.clear();
 	}
@@ -598,6 +603,9 @@ private:
 	UndoBuffer mUndoBuffer;
 	int mUndoIndex;
 
+	bool mSidebar;
+	bool mHasSearch;
+
 	char mFindWord[256];
 	bool mFindOpened;
 	bool mFindJustOpened;
@@ -608,6 +616,14 @@ private:
 
 	std::vector<std::string> mACEntrySearch;
 	std::vector<std::pair<std::string, std::string>> mACEntries;
+
+	bool mIsSnippet;
+	std::vector<Coordinates> mSnippetTagStart, mSnippetTagEnd;
+	std::vector<int> mSnippetTagID;
+	std::vector<bool> mSnippetTagHighlight;
+	int mSnippetTagSelected, mSnippetTagLength, mSnippetTagPreviousLength;
+	std::string mAutcompleteParse(const std::string& str, const Coordinates& start);
+	void mAutocompleteSelect();
 
 	bool m_requestAutocomplete, m_readyForAutocomplete;
 	void m_buildSuggestions(bool* keepACOpened = nullptr);

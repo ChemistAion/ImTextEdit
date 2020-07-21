@@ -81,6 +81,10 @@ TextEditor::TextEditor()
 	, m_requestAutocomplete(false)
 	, mScrollbarMarkers(false)
 	, mAutoindentOnPaste(false)
+	, mIsSnippet(false)
+	, mSnippetTagSelected(0)
+	, mSidebar(true)
+	, mHasSearch(true)
 	, mStartTime(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
 {
 	memset(mFindWord, 0, 256 * sizeof(char));
@@ -381,10 +385,8 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 {
 	assert(!mReadOnly);
 
-	bool shouldAutoIndent = mAutoindentOnPaste && indent;
-
 	int autoIndentStart = 0;
-	for (int i = 0; i < mLines[aWhere.mLine].size() && shouldAutoIndent; i++) {
+	for (int i = 0; i < mLines[aWhere.mLine].size() && indent; i++) {
 		Char ch = mLines[aWhere.mLine][i].mChar;
 		if (ch == ' ')
 			autoIndentStart++;
@@ -424,7 +426,7 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 			++totalLines;
 			++aValue;
 
-			if (shouldAutoIndent) {
+			if (indent) {
 				bool lineIsAlreadyIndent = (isspace(*aValue) && *aValue != '\n' && *aValue != '\r');
 
 				// first check if we need to "unindent"
@@ -445,10 +447,24 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 				cindex = tabCount + spaceCount;
 				aWhere.mColumn = actualAutoIndent;
 
-				while (spaceCount-- > 0)
+				while (spaceCount-- > 0) {
 					mLines[aWhere.mLine].insert(mLines[aWhere.mLine].begin(), Glyph(' ', PaletteIndex::Default));
-				while (tabCount-- > 0)
+					for (int i = 0; i < mSnippetTagStart.size(); i++) {
+						if (mSnippetTagStart[i].mLine == aWhere.mLine) {
+							mSnippetTagStart[i].mColumn++;
+							mSnippetTagEnd[i].mColumn++;
+						}
+					}
+				}
+				while (tabCount-- > 0) {
 					mLines[aWhere.mLine].insert(mLines[aWhere.mLine].begin(), Glyph('\t', PaletteIndex::Default));
+					for (int i = 0; i < mSnippetTagStart.size(); i++) {
+						if (mSnippetTagStart[i].mLine == aWhere.mLine) {
+							mSnippetTagStart[i].mColumn += mTabSize;
+							mSnippetTagEnd[i].mColumn += mTabSize;
+						}
+					}
+				}
 			}
 		}
 		else
@@ -998,6 +1014,9 @@ void TextEditor::HandleKeyboardInputs()
 		int keyCount = 0;
 		bool keepACOpened = false;
 		if (actionID != ShortcutID::Count) {
+			if (actionID != ShortcutID::Indent)
+				mIsSnippet = false;
+			
 			switch (actionID) {
 				case ShortcutID::Undo: Undo(); break;
 				case ShortcutID::Redo: Redo(); break;
@@ -1046,26 +1065,13 @@ void TextEditor::HandleKeyboardInputs()
 				case ShortcutID::SelectAll: SelectAll(); break;
 				case ShortcutID::AutocompleteOpen: 
 				{
-					if (mAutocomplete)
+					if (mAutocomplete && !mIsSnippet)
 						m_buildSuggestions(&keepACOpened);
 				} break;
 				case ShortcutID::AutocompleteSelect: 
 				case ShortcutID::AutocompleteSelectActive:
 				{
-					auto curCoord = GetCursorPosition();
-					curCoord.mColumn = std::max<int>(curCoord.mColumn - 1, 0);
-					
-					auto acStart = FindWordStart(curCoord);
-					auto acEnd = FindWordEnd(curCoord);
-
-					const auto& acEntry = mACSuggestions[mACIndex];
-					
-					SetSelection(acStart, acEnd);
-					Backspace();
-					InsertText(acEntry.second);
-					
-					m_requestAutocomplete = false;
-					mACOpened = false;
+					mAutocompleteSelect();
 				}
 				break;
 				case ShortcutID::AutocompleteUp:
@@ -1080,13 +1086,26 @@ void TextEditor::HandleKeyboardInputs()
 					EnterCharacter('\n', false);
 				break;
 				case ShortcutID::Indent:
-					EnterCharacter('\t', false);
+					if (mIsSnippet) {
+						do {
+							mSnippetTagSelected++;
+							if (mSnippetTagSelected >= mSnippetTagStart.size())
+								mSnippetTagSelected = 0;
+						} while (!mSnippetTagHighlight[mSnippetTagSelected]);
+
+						mSnippetTagLength = 0;
+						mSnippetTagPreviousLength = mSnippetTagEnd[mSnippetTagSelected].mColumn - mSnippetTagStart[mSnippetTagSelected].mColumn;
+
+						SetSelection(mSnippetTagStart[mSnippetTagSelected], mSnippetTagEnd[mSnippetTagSelected]);
+						SetCursorPosition(mSnippetTagEnd[mSnippetTagSelected]);
+					} else
+						EnterCharacter('\t', false);
 				break;
 				case ShortcutID::Unindent:
 					EnterCharacter('\t', true);
 				break;
-				case ShortcutID::Find: mFindOpened = true; mFindJustOpened = true; mReplaceOpened = false; break;
-				case ShortcutID::Replace: mFindOpened = true; mFindJustOpened = true; mReplaceOpened = true; break;
+				case ShortcutID::Find: mFindOpened = mHasSearch; mFindJustOpened = mHasSearch; mReplaceOpened = false; break;
+				case ShortcutID::Replace: mFindOpened = mHasSearch; mFindJustOpened = mHasSearch; mReplaceOpened = mHasSearch; break;
 				case ShortcutID::DebugStep:
 					if (OnDebuggerAction)
 						OnDebuggerAction(this, TextEditor::DebugAction::Step);
@@ -1126,6 +1145,36 @@ void TextEditor::HandleKeyboardInputs()
 				auto c = (unsigned char)io.InputQueueCharacters[i];
 				if (c != 0 && (c == '\n' || c >= 32)) {
 					EnterCharacter((char)c, shift);
+					if (mIsSnippet) {
+						mSnippetTagLength++;
+						mSnippetTagEnd[mSnippetTagSelected].mColumn = mSnippetTagStart[mSnippetTagSelected].mColumn + mSnippetTagLength;
+					
+						Coordinates curCursor = GetCursorPosition();
+						SetSelection(mSnippetTagStart[mSnippetTagSelected], mSnippetTagEnd[mSnippetTagSelected]);
+						std::string curWord = GetSelectedText();
+						std::unordered_map<int, int> modif;
+						modif[curCursor.mLine] = 0;
+						for (int j = 0; j < mSnippetTagStart.size(); j++) {
+							if (j != mSnippetTagSelected) {
+								mSnippetTagStart[j].mColumn += modif[mSnippetTagStart[j].mLine];
+								mSnippetTagEnd[j].mColumn += modif[mSnippetTagStart[j].mLine];
+							}
+							if (mSnippetTagID[j] == mSnippetTagID[mSnippetTagSelected]) {
+								modif[mSnippetTagStart[j].mLine] += mSnippetTagLength - mSnippetTagPreviousLength;
+
+								if (j != mSnippetTagSelected) {
+									SetSelection(mSnippetTagStart[j], mSnippetTagEnd[j]);
+									Backspace();
+									InsertText(curWord);
+									mSnippetTagEnd[j].mColumn = mSnippetTagStart[j].mColumn + mSnippetTagLength;
+								}
+							}
+						}
+						SetSelection(curCursor, curCursor);
+						SetCursorPosition(curCursor);
+						EnsureCursorVisible();
+						mSnippetTagPreviousLength = mSnippetTagLength;
+					}
 					keyCount++;
 				}
 			}
@@ -1133,7 +1182,7 @@ void TextEditor::HandleKeyboardInputs()
 		}
 
 		// active autocomplete
-		if (m_requestAutocomplete && m_readyForAutocomplete) {
+		if (m_requestAutocomplete && m_readyForAutocomplete && !mIsSnippet) {
 			m_buildSuggestions(&keepACOpened);
 			m_requestAutocomplete = false;
 			m_readyForAutocomplete = false;
@@ -1163,6 +1212,9 @@ void TextEditor::HandleMouseInputs()
 			auto doubleClick = ImGui::IsMouseDoubleClicked(0);
 			auto t = ImGui::GetTime();
 			auto tripleClick = click && !doubleClick && (mLastClick != -1.0f && (t - mLastClick) < io.MouseDoubleClickTime);
+
+			if (click || doubleClick || tripleClick)
+				mIsSnippet = false;
 
 			/*
 				Left mouse button triple click
@@ -1336,7 +1388,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 	// Deduce mTextStart by evaluating mLines size (global lineMax) plus two spaces as text width
 	char buf[16];
 	snprintf(buf, 16, " %3d ", globalLineMax);
-	mTextStart = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x + mLeftMargin;
+	mTextStart = (ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x + mLeftMargin) * mSidebar;
 
 	
 	if (!mLines.empty())
@@ -1372,6 +1424,23 @@ void TextEditor::RenderInternal(const char* aTitle)
 				ImVec2 vstart(lineStartScreenPos.x + mTextStart + sstart, lineStartScreenPos.y);
 				ImVec2 vend(lineStartScreenPos.x + mTextStart + ssend, lineStartScreenPos.y + mCharAdvance.y);
 				drawList->AddRectFilled(vstart, vend, mPalette[(int)PaletteIndex::Selection]);
+			}
+
+			if (mIsSnippet) {
+				unsigned int oldColor = mPalette[(int)PaletteIndex::Selection];
+				unsigned int alpha = (oldColor & 0xFF000000) >> 25;
+				unsigned int newColor = (oldColor & 0x00FFFFFF) | (alpha << 24);
+
+				for (int i = 0; i < mSnippetTagStart.size(); i++) {
+					if (mSnippetTagStart[i].mLine == lineNo && mSnippetTagHighlight[i]) {
+						float tstart = TextDistanceToLineStart(mSnippetTagStart[i]);
+						float tend = TextDistanceToLineStart(mSnippetTagEnd[i]);
+
+						ImVec2 vstart(lineStartScreenPos.x + mTextStart + tstart, lineStartScreenPos.y);
+						ImVec2 vend(lineStartScreenPos.x + mTextStart + tend, lineStartScreenPos.y + mCharAdvance.y);
+						drawList->AddRectFilled(vstart, vend, newColor);
+					}
+				}
 			}
 
 			auto start = ImVec2(lineStartScreenPos.x + scrollX, lineStartScreenPos.y);
@@ -1514,57 +1583,58 @@ void TextEditor::RenderInternal(const char* aTitle)
 			}
 
 			// side bar bg
-			drawList->AddRectFilled(ImVec2(lineStartScreenPos.x + scrollX, lineStartScreenPos.y), ImVec2(lineStartScreenPos.x + scrollX + mTextStart - 5.0f, lineStartScreenPos.y + mCharAdvance.y), ImGui::GetColorU32(ImGuiCol_WindowBg));
+			if (mSidebar) {
+				drawList->AddRectFilled(ImVec2(lineStartScreenPos.x + scrollX, lineStartScreenPos.y), ImVec2(lineStartScreenPos.x + scrollX + mTextStart - 5.0f, lineStartScreenPos.y + mCharAdvance.y), ImGui::GetColorU32(ImGuiCol_WindowBg));
 
-			// Draw breakpoints
-			if (HasBreakpoint(lineNo + 1) != 0) {
-				float radius = ImGui::GetFontSize() * 1.0f / 3.0f;
-				float startX = lineStartScreenPos.x + scrollX + radius + 2.0f;
-				float startY = lineStartScreenPos.y + radius + 4.0f;
+				// Draw breakpoints
+				if (HasBreakpoint(lineNo + 1) != 0) {
+					float radius = ImGui::GetFontSize() * 1.0f / 3.0f;
+					float startX = lineStartScreenPos.x + scrollX + radius + 2.0f;
+					float startY = lineStartScreenPos.y + radius + 4.0f;
 
-				drawList->AddCircle(ImVec2(startX, startY), radius + 1, mPalette[(int)PaletteIndex::BreakpointOutline]);
-				drawList->AddCircleFilled(ImVec2(startX, startY), radius, mPalette[(int)PaletteIndex::Breakpoint]);
+					drawList->AddCircle(ImVec2(startX, startY), radius + 1, mPalette[(int)PaletteIndex::BreakpointOutline]);
+					drawList->AddCircleFilled(ImVec2(startX, startY), radius, mPalette[(int)PaletteIndex::Breakpoint]);
 
-				Breakpoint bkpt = GetBreakpoint(lineNo + 1);
-				if (!bkpt.mEnabled)
-					drawList->AddCircleFilled(ImVec2(startX, startY), radius - 1, mPalette[(int)PaletteIndex::BreakpointDisabled]);
-				else {
-					if (!bkpt.mCondition.empty())
-						drawList->AddRectFilled(ImVec2(startX - radius + 3, startY - radius / 4), ImVec2(startX + radius - 3, startY + radius / 4), mPalette[(int)PaletteIndex::BreakpointOutline]);
+					Breakpoint bkpt = GetBreakpoint(lineNo + 1);
+					if (!bkpt.mEnabled)
+						drawList->AddCircleFilled(ImVec2(startX, startY), radius - 1, mPalette[(int)PaletteIndex::BreakpointDisabled]);
+					else {
+						if (!bkpt.mCondition.empty())
+							drawList->AddRectFilled(ImVec2(startX - radius + 3, startY - radius / 4), ImVec2(startX + radius - 3, startY + radius / 4), mPalette[(int)PaletteIndex::BreakpointOutline]);
+					}
+				}
+
+				// Draw current line indicator
+				if (lineNo + 1 == mDebugCurrentLine) {
+					float radius = ImGui::GetFontSize() * 1.0f / 3.0f;
+					float startX = lineStartScreenPos.x + scrollX + radius + 2.0f;
+					float startY = lineStartScreenPos.y + 4.0f;
+
+					// outline
+					drawList->AddRect(
+						ImVec2(startX - radius, startY + radius / 2), ImVec2(startX, startY + radius * 3.0f / 2.0f),
+						mPalette[(int)PaletteIndex::CurrentLineIndicatorOutline]);
+					drawList->AddTriangle(
+						ImVec2(startX - 1, startY - 2), ImVec2(startX - 1, startY + radius * 2 + 1), ImVec2(startX + radius, startY + radius),
+						mPalette[(int)PaletteIndex::CurrentLineIndicatorOutline]);
+
+					// fill
+					drawList->AddRectFilled(
+						ImVec2(startX - radius + 1, startY + 1 + radius / 2), ImVec2(startX + 1, startY - 1 + radius * 3.0f / 2.0f),
+						mPalette[(int)PaletteIndex::CurrentLineIndicator]);
+					drawList->AddTriangleFilled(
+						ImVec2(startX, startY + 1), ImVec2(startX, startY - 1 + radius * 2), ImVec2(startX - 1 + radius, startY + radius),
+						mPalette[(int)PaletteIndex::CurrentLineIndicator]);
+				}
+
+				// Draw line number (right aligned)
+				if (mShowLineNumbers) {
+					snprintf(buf, 16, "%3d  ", lineNo + 1);
+
+					auto lineNoWidth = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x;
+					drawList->AddText(ImVec2(lineStartScreenPos.x + scrollX + mTextStart - lineNoWidth, lineStartScreenPos.y), mPalette[(int)PaletteIndex::LineNumber], buf);
 				}
 			}
-
-			// Draw current line indicator
-			if (lineNo + 1 == mDebugCurrentLine) {
-				float radius = ImGui::GetFontSize() * 1.0f / 3.0f;
-				float startX = lineStartScreenPos.x + scrollX + radius + 2.0f;
-				float startY = lineStartScreenPos.y + 4.0f;
-
-				// outline
-				drawList->AddRect(
-					ImVec2(startX - radius, startY + radius / 2), ImVec2(startX, startY + radius * 3.0f / 2.0f),
-					mPalette[(int)PaletteIndex::CurrentLineIndicatorOutline]);
-				drawList->AddTriangle(
-					ImVec2(startX-1, startY-2), ImVec2(startX-1, startY + radius * 2 + 1), ImVec2(startX + radius, startY + radius),
-					mPalette[(int)PaletteIndex::CurrentLineIndicatorOutline]);
-
-				// fill
-				drawList->AddRectFilled(
-					ImVec2(startX - radius + 1, startY + 1 + radius / 2), ImVec2(startX + 1, startY - 1 + radius * 3.0f / 2.0f),
-					mPalette[(int)PaletteIndex::CurrentLineIndicator]);
-				drawList->AddTriangleFilled(
-					ImVec2(startX, startY + 1), ImVec2(startX, startY - 1 + radius * 2), ImVec2(startX - 1 + radius, startY + radius),
-					mPalette[(int)PaletteIndex::CurrentLineIndicator]);
-			}
-
-			// Draw line number (right aligned)
-			if (mShowLineNumbers) {
-				snprintf(buf, 16, "%3d  ", lineNo + 1);
-
-				auto lineNoWidth = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x;
-				drawList->AddText(ImVec2(lineStartScreenPos.x + scrollX + mTextStart - lineNoWidth, lineStartScreenPos.y), mPalette[(int)PaletteIndex::LineNumber], buf);
-			}
-
 
 			++lineNo;
 		}
@@ -1733,6 +1803,137 @@ void TextEditor::RenderInternal(const char* aTitle)
 	}
 }
 
+std::string TextEditor::mAutcompleteParse(const std::string& str, const Coordinates& start)
+{
+	const char* buffer = str.c_str();
+	const char* tagPlaceholderStart = buffer;
+	const char* tagStart = buffer;
+
+	bool parsingTag = false;
+	bool parsingTagPlaceholder = false;
+
+	std::vector<int> tagIds, tagLocations, tagLengths;
+	std::unordered_map<int, std::string> tagPlaceholders;
+
+	mSnippetTagStart.clear();
+	mSnippetTagEnd.clear();
+	mSnippetTagID.clear();
+	mSnippetTagHighlight.clear();
+
+	Coordinates cursor = start, tagStartCoord, tagEndCoord;
+
+	int tagId = -1;
+
+	int modif = 0;
+	while (*buffer != '\0') {
+		if (*buffer == '{' && *(buffer + 1) == '$') {
+			parsingTagPlaceholder = false;
+			parsingTag = true;
+			tagId = -1;
+			tagStart = buffer;
+
+			tagStartCoord = cursor;
+
+			const char* skipBuffer = buffer;
+			char** endLoc = const_cast<char**>(&buffer); // oops
+			tagId = strtol(buffer + 2, endLoc, 10);
+
+			cursor.mColumn += *endLoc - skipBuffer;
+
+			if (*buffer == ':') {
+				tagPlaceholderStart = buffer + 1;
+				parsingTagPlaceholder = true;
+			}
+		}
+		
+		if (*buffer == '}' && parsingTag) {
+			std::string tagPlaceholder = "";
+			if (parsingTagPlaceholder)
+				tagPlaceholder = std::string(tagPlaceholderStart, buffer - tagPlaceholderStart);
+
+			tagIds.push_back(tagId);
+			tagLocations.push_back(tagStart - str.c_str());
+			tagLengths.push_back(buffer - tagStart + 1);
+			if (!tagPlaceholder.empty() || tagPlaceholders.count(tagId) == 0) {
+				if (tagPlaceholder.empty())
+					tagPlaceholder = " ";
+				
+				tagStartCoord.mColumn = std::max<int>(0, tagStartCoord.mColumn - modif);
+				tagEndCoord = tagStartCoord;
+				tagEndCoord.mColumn += tagPlaceholder.size();
+
+				mSnippetTagStart.push_back(tagStartCoord);
+				mSnippetTagEnd.push_back(tagEndCoord);
+				mSnippetTagID.push_back(tagId);
+				mSnippetTagHighlight.push_back(true);
+
+				tagPlaceholders[tagId] = tagPlaceholder;
+			} else {
+				tagStartCoord.mColumn = std::max<int>(0, tagStartCoord.mColumn - modif);
+				tagEndCoord = tagStartCoord;
+				tagEndCoord.mColumn += tagPlaceholders[tagId].size();
+
+				mSnippetTagStart.push_back(tagStartCoord);
+				mSnippetTagEnd.push_back(tagEndCoord);
+				mSnippetTagID.push_back(tagId);
+				mSnippetTagHighlight.push_back(false);
+			}
+			modif += (tagLengths.back() - tagPlaceholders[tagId].size());
+
+
+			parsingTagPlaceholder = false;
+			parsingTag = false;
+			tagId = -1;
+		}
+
+		if (*buffer == '\n') {
+			cursor.mLine++;
+			cursor.mColumn = 0;
+			modif = 0;
+		} else 
+			cursor.mColumn++;
+
+		buffer++;
+	}
+
+	mIsSnippet = !tagIds.empty();
+
+	std::string ret = str;
+	for (int i = tagLocations.size() - 1; i >= 0; i--) {
+		ret.erase(tagLocations[i], tagLengths[i]);
+		ret.insert(tagLocations[i], tagPlaceholders[tagIds[i]]);
+	}
+
+	return ret;
+}
+void TextEditor::mAutocompleteSelect()
+{
+	auto curCoord = GetCursorPosition();
+	curCoord.mColumn = std::max<int>(curCoord.mColumn - 1, 0);
+
+	auto acStart = FindWordStart(curCoord);
+	auto acEnd = FindWordEnd(curCoord);
+
+	const auto& acEntry = mACSuggestions[mACIndex];
+
+	std::string entryText = mAutcompleteParse(acEntry.second, acStart);
+
+	SetSelection(acStart, acEnd);
+	Backspace();
+	InsertText(entryText, true);
+
+	if (mIsSnippet && mSnippetTagStart.size() > 0) {
+		SetSelection(mSnippetTagStart[0], mSnippetTagEnd[0]);
+		SetCursorPosition(mSnippetTagEnd[0]);
+		mSnippetTagSelected = 0;
+		mSnippetTagLength = 0;
+		mSnippetTagPreviousLength = mSnippetTagEnd[mSnippetTagSelected].mColumn - mSnippetTagStart[mSnippetTagSelected].mColumn;
+	}
+
+	m_requestAutocomplete = false;
+	mACOpened = false;
+}
+
 void TextEditor::m_buildSuggestions(bool* keepACOpened)
 {
 	mACWord = GetWordUnderCursor();
@@ -1847,8 +2048,11 @@ void TextEditor::m_buildSuggestions(bool* keepACOpened)
 			std::transform(lwrStr.begin(), lwrStr.end(), lwrStr.begin(), tolower);
 
 			size_t loc = lwrStr.find(acWord);
-			if (loc != std::string::npos)
-				weights.push_back(ACEntry(str.first, str.first, loc));
+			if (loc != std::string::npos) {
+				std::string val = str.first;
+				if (mCompleteBraces) val += "()";
+				weights.push_back(ACEntry(str.first, val, loc));
+			}
 		}
 		
 		// build the actual list
@@ -3193,7 +3397,7 @@ void TextEditor::Paste()
 		u.mAdded = clipText;
 		u.mAddedStart = GetActualCursorCoordinates();
 
-		InsertText(clipText, true);
+		InsertText(clipText, mAutoindentOnPaste);
 
 		u.mAddedEnd = GetActualCursorCoordinates();
 		u.mAfter = mState;
