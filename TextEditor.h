@@ -602,6 +602,7 @@ private:
 	EditorState mState;
 	UndoBuffer mUndoBuffer;
 	int mUndoIndex;
+	int mReplaceIndex;
 
 	bool mSidebar;
 	bool mHasSearch;

@@ -85,6 +85,7 @@ TextEditor::TextEditor()
 	, mSnippetTagSelected(0)
 	, mSidebar(true)
 	, mHasSearch(true)
+	, mReplaceIndex(0)
 	, mStartTime(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
 {
 	memset(mFindWord, 0, 256 * sizeof(char));
@@ -2297,25 +2298,25 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 			if (ImGui::Button((">##replaceOne" + std::string(aTitle)).c_str()) || shouldReplace) {
 				if (strlen(mFindWord) > 0) {
 					auto curPos = mState.mCursorPosition;
-					size_t cindex = 0;
-					for (size_t ln = 0; ln < curPos.mLine; ln++)
-						cindex += GetLineCharacterCount(ln) + 1;
-					cindex += curPos.mColumn;
-
+					
 					std::string textSrc = GetText();
-					size_t textLoc = textSrc.find(mFindWord, cindex);
-					if (textLoc == std::string::npos)
+					if (mReplaceIndex >= textSrc.size())
+						mReplaceIndex = 0;
+					size_t textLoc = textSrc.find(mFindWord, mReplaceIndex);
+					if (textLoc == std::string::npos) {
+						mReplaceIndex = 0;
 						textLoc = textSrc.find(mFindWord, 0);
+					}
 
 
 					if (textLoc != std::string::npos) {
 						curPos.mLine = curPos.mColumn = 0;
-						cindex = 0;
+						int totalCount = 0;
 						for (size_t ln = 0; ln < mLines.size(); ln++) {
-							int charCount = GetLineCharacterCount(ln) + 1;
-							if (cindex + charCount > textLoc) {
+							int lineCharCount = GetLineCharacterCount(ln) + 1;
+							if (textLoc >= totalCount && textLoc < totalCount + lineCharCount) {
 								curPos.mLine = ln;
-								curPos.mColumn = textLoc - cindex;
+								curPos.mColumn = textLoc - totalCount;
 
 								auto& line = mLines[curPos.mLine];
 								for (int i = 0; i < line.size(); i++)
@@ -2324,20 +2325,20 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 
 								break;
 							}
-							else // just keep adding
-								cindex += charCount;
+							totalCount += lineCharCount;
 						}
-
 
 						auto selStart = curPos, selEnd = curPos;
 						selEnd.mColumn += strlen(mFindWord);
 						SetSelection(curPos, selEnd);
-						DeleteSelection(); // ik there are better and more optimized ways to do this, but im lazy rn
+						DeleteSelection();
 						InsertText(mReplaceWord);
 						SetCursorPosition(selEnd);
 						mScrollToCursor = true;
 
 						ImGui::SetKeyboardFocusHere(0);
+
+						mReplaceIndex = textLoc + strlen(mReplaceWord);
 					}
 				}
 			}
@@ -2346,23 +2347,19 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 			if (ImGui::Button((">>##replaceAll" + std::string(aTitle)).c_str())) {
 				if (strlen(mFindWord) > 0) {
 					auto curPos = mState.mCursorPosition;
-					size_t cindex = 0;
-					for (size_t ln = 0; ln < curPos.mLine; ln++)
-						cindex += GetLineCharacterCount(ln) + 1;
-					cindex += curPos.mColumn;
 
 					std::string textSrc = GetText();
-					size_t textLoc = textSrc.find(mFindWord, cindex);
+					size_t textLoc = textSrc.find(mFindWord, 0);
 
 					do {
 						if (textLoc != std::string::npos) {
 							curPos.mLine = curPos.mColumn = 0;
-							cindex = 0;
+							int totalCount = 0;
 							for (size_t ln = 0; ln < mLines.size(); ln++) {
-								int charCount = GetLineCharacterCount(ln) + 1;
-								if (cindex + charCount > textLoc) {
+								int lineCharCount = GetLineCharacterCount(ln) + 1;
+								if (textLoc >= totalCount && textLoc < totalCount + lineCharCount) {
 									curPos.mLine = ln;
-									curPos.mColumn = textLoc - cindex;
+									curPos.mColumn = textLoc - totalCount;
 
 									auto& line = mLines[curPos.mLine];
 									for (int i = 0; i < line.size(); i++)
@@ -2371,15 +2368,14 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 
 									break;
 								}
-								else // just keep adding
-									cindex += charCount;
+								totalCount += lineCharCount;
 							}
 
 
 							auto selStart = curPos, selEnd = curPos;
 							selEnd.mColumn += strlen(mFindWord);
 							SetSelection(curPos, selEnd);
-							DeleteSelection(); // ik there are better and more optimized ways to do this, but im lazy rn
+							DeleteSelection();
 							InsertText(mReplaceWord);
 							SetCursorPosition(selEnd);
 							mScrollToCursor = true;
@@ -2388,16 +2384,9 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 
 							// find next occurance
 							textSrc = GetText();
-							cindex = 0;
-							for (size_t ln = 0; ln < selEnd.mLine; ln++)
-								cindex += GetLineCharacterCount(ln) + 1;
-							cindex += selEnd.mColumn;
-
-							textLoc = textSrc.find(mFindWord, cindex);
+							textLoc += strlen(mReplaceWord);
+							textLoc = textSrc.find(mFindWord, textLoc);
 						}
-
-						if (textLoc == std::string::npos)
-							textLoc = textSrc.find(mFindWord, 0);
 					} while (textLoc != std::string::npos);
 				}
 			}
@@ -2837,6 +2826,12 @@ void TextEditor::SetSelection(const Coordinates & aStart, const Coordinates & aE
 	if (mState.mSelectionStart != oldSelStart ||
 		mState.mSelectionEnd != oldSelEnd)
 		mCursorPositionChanged = true;
+
+	// update mReplaceIndex
+	mReplaceIndex = 0;
+	for (size_t ln = 0; ln < mState.mCursorPosition.mLine; ln++)
+		mReplaceIndex += GetLineCharacterCount(ln) + 1;
+	mReplaceIndex += mState.mCursorPosition.mColumn;
 }
 
 void TextEditor::InsertText(const std::string& aValue, bool indent)
