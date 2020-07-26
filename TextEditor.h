@@ -673,6 +673,8 @@ private:
 	LanguageDefinition mLanguageDefinition;
 	RegexList mRegexList;
 
+	float mDebugBarWidth, mDebugBarHeight;
+
 	bool mDebugCurrentLineUpdated;
 	int mDebugCurrentLine;
 	ImVec2 mUICursorPos, mFindOrigin;

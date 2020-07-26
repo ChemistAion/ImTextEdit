@@ -35,8 +35,6 @@ bool equals(InputIt1 first1, InputIt1 last1,
 	return first1 == last1 && first2 == last2;
 }
 
-#define DEBUG_BAR_WIDTH 315.0f
-
 TextEditor::TextEditor()
 	: mLineSpacing(1.0f)
 	, mUndoIndex(0)
@@ -104,6 +102,9 @@ TextEditor::TextEditor()
 	HasIdentifierHover = nullptr;
 	OnExpressionHover = nullptr;
 	HasExpressionHover = nullptr;
+
+	mDebugBarWidth = 0.0f;
+	mDebugBarHeight = 0.0f;
 
 	SetPalette(GetDarkPalette());
 	SetLanguageDefinition(LanguageDefinition::HLSL());
@@ -1658,38 +1659,65 @@ void TextEditor::RenderInternal(const char* aTitle)
 			if (hoverTime > 0.5 && (hoverChar == '(' || hoverChar == ')') && IsDebugging()) {
 				std::string expr = "";
 
-				int colStart = 0;
+				int colStart = 0, rowStart = hoverPosition.mLine;
 				int bracketMatch = 0;
 				if (hoverChar == ')') {
-					for (int i = hoverPosition.mColumn; i >= 0; i--) {
-						char curChar = mLines[hoverPosition.mLine][i].mChar;
-						if (curChar == '(')
-							bracketMatch++;
-						else if (curChar == ')')
-							bracketMatch--;
-						expr += curChar;
-						if (bracketMatch == 0) {
-							colStart = i - 1;
-							break;
+					int colIndex = hoverPosition.mColumn;
+					for (; rowStart >= 0; rowStart--) {
+						for (int i = colIndex; i >= 0; i--) {
+							char curChar = mLines[rowStart][i].mChar;
+							if (curChar == '(')
+								bracketMatch++;
+							else if (curChar == ')')
+								bracketMatch--;
+
+							if (!isspace(curChar) || curChar == ' ')
+								expr += curChar;
+
+							if (bracketMatch == 0) {
+								colStart = i - 1;
+								break;
+							}
 						}
-					}
-					std::reverse(expr.begin(), expr.end());
-				} else if (hoverChar == '(') {
-					colStart = hoverPosition.mColumn - 1;
-					for (int i = hoverPosition.mColumn; i < mLines[hoverPosition.mLine].size(); i++) {
-						char curChar = mLines[hoverPosition.mLine][i].mChar;
-						if (curChar == '(')
-							bracketMatch++;
-						else if (curChar == ')')
-							bracketMatch--;
-						expr += curChar;
 						if (bracketMatch == 0)
 							break;
+						if (rowStart != 0)
+							colIndex = mLines[rowStart - 1].size() - 1;
 					}
+					std::reverse(expr.begin(), expr.end());
+
+					if (rowStart <= 0)
+						colStart = -1;
+				} else if (hoverChar == '(') {
+					int colIndex = hoverPosition.mColumn;
+					colStart = hoverPosition.mColumn - 1;
+					for (int j = rowStart; j < mLines.size(); j++) {
+						for (int i = colIndex; i < mLines[j].size(); i++) {
+							char curChar = mLines[j][i].mChar;
+							if (curChar == '(')
+								bracketMatch++;
+							else if (curChar == ')')
+								bracketMatch--;
+
+							if (!isspace(curChar) || curChar == ' ')
+								expr += curChar;
+
+							if (bracketMatch == 0)
+								break;
+						}
+
+						if (bracketMatch == 0)
+							break;
+						if (j != 0)
+							colIndex = 0;
+					}
+
+					if (rowStart >= mLines.size())
+						colStart = -1;
 				}
 
-				while (colStart >= 0 && isalnum(mLines[hoverPosition.mLine][colStart].mChar)) {
-					expr.insert(expr.begin(), mLines[hoverPosition.mLine][colStart].mChar);
+				while (colStart >= 0 && isalnum(mLines[rowStart][colStart].mChar)) {
+					expr.insert(expr.begin(), mLines[rowStart][colStart].mChar);
 					colStart--;
 				}
 
@@ -1699,8 +1727,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 						ImGui::BeginTooltip();
 						OnExpressionHover(this, expr);
 						ImGui::EndTooltip();
-					}
-				}
+					}				}
 			} else if (hoverTime > 0.2) {
 				auto id = GetWordAt(ScreenPosToCoordinates(ImGui::GetMousePos()));
 				if (!id.empty()) {
@@ -1799,8 +1826,8 @@ void TextEditor::RenderInternal(const char* aTitle)
 	}
 	if (IsDebugging())
 	{
-		ImVec2 dbgPos = ImVec2(mUICursorPos.x + scrollX + mWindowWidth / 2 - DEBUG_BAR_WIDTH * mUIScale / 2, mUICursorPos.y + ImGui::GetScrollY());
-		drawList->AddRectFilled(dbgPos, ImVec2(dbgPos.x + DEBUG_BAR_WIDTH * mUIScale, dbgPos.y + 40 * mUIScale), ImGui::GetColorU32(ImGuiCol_FrameBg));
+		ImVec2 dbgPos = ImVec2(mUICursorPos.x + scrollX + mWindowWidth / 2 - mDebugBarWidth / 2, mUICursorPos.y + ImGui::GetScrollY());
+		drawList->AddRectFilled(dbgPos, ImVec2(dbgPos.x + mDebugBarWidth, dbgPos.y + mDebugBarHeight), ImGui::GetColorU32(ImGuiCol_FrameBg));
 	}
 }
 
@@ -2406,8 +2433,11 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		ImFont* font = ImGui::GetFont();
 		ImGui::PopFont();
 
-		ImGui::SetNextWindowPos(ImVec2(mFindOrigin.x + windowWidth / 2 - DEBUG_BAR_WIDTH * mUIScale / 2, mFindOrigin.y), ImGuiCond_Always);
-		ImGui::BeginChild(("##ted_dbgcontrols" + std::string(aTitle)).c_str(), ImVec2(DEBUG_BAR_WIDTH * mUIScale, 40 * mUIScale), true, ImGuiWindowFlags_NoScrollbar);
+
+		ImGui::SetNextWindowPos(ImVec2(mFindOrigin.x + windowWidth / 2 - mDebugBarWidth / 2, mFindOrigin.y), ImGuiCond_Always);
+		ImGui::BeginChild(("##ted_dbgcontrols" + std::string(aTitle)).c_str(), ImVec2(mDebugBarWidth, mDebugBarHeight), true, ImGuiWindowFlags_NoScrollbar);
+
+		ImVec2 dbBarStart = ImGui::GetCursorPos();
 
 		if (ImGui::Button(("Step##ted_dbgstep" + std::string(aTitle)).c_str()) && OnDebuggerAction)
 			OnDebuggerAction(this, TextEditor::DebugAction::Step);
@@ -2427,7 +2457,14 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 
 		if (ImGui::Button(("Stop##ted_dbgstop" + std::string(aTitle)).c_str()) && OnDebuggerAction)
 			OnDebuggerAction(this, TextEditor::DebugAction::Stop);
+
+		ImVec2 dbBarEnd = ImGui::GetCursorPos();
+		mDebugBarHeight = dbBarEnd.y - dbBarStart.y + ImGui::GetStyle().WindowPadding.y * 2.0f;
+
 		ImGui::SameLine(0, 6);
+
+		dbBarEnd = ImGui::GetCursorPos();
+		mDebugBarWidth = dbBarEnd.x - dbBarStart.x + ImGui::GetStyle().WindowPadding.x * 2.0f;
 
 		ImGui::EndChild();
 
