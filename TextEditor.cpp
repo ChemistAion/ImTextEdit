@@ -445,6 +445,10 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 				// add tabs
 				int tabCount = actualAutoIndent / mTabSize;
 				int spaceCount = actualAutoIndent - tabCount * mTabSize;
+				if (mInsertSpaces) {
+					tabCount = 0;
+					spaceCount = actualAutoIndent;
+				}
 
 				cindex = tabCount + spaceCount;
 				aWhere.mColumn = actualAutoIndent;
