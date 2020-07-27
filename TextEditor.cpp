@@ -436,7 +436,7 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 				while (*bracketSearch != '\0' && isspace(*bracketSearch) && *bracketSearch != '\n')
 					bracketSearch++;
 				if (*bracketSearch == '}')
-					autoIndent = std::max(0, autoIndent - autoIndentStart);
+					autoIndent = std::max(0, autoIndent - mTabSize);
 
 				int actualAutoIndent = autoIndent;
 				if (lineIsAlreadyIndent)
@@ -472,7 +472,7 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 		else
 		{
 			if (*aValue == '{')
-				autoIndent += autoIndentStart;
+				autoIndent += mTabSize;
 
 			bool isTab = *aValue == '\t';
 			auto& line = mLines[aWhere.mLine];
