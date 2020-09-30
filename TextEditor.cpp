@@ -4571,7 +4571,7 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::GLSL()
 			"sampler2DArrayShadow", "isampler1D", "isampler2D", "isampler3D", "isamplerCube", "isampler1DArray", "isampler2DArray", "usampler1D", "usampler2D", "usampler3D", "usamplerCube", "usampler1DArray", "usampler2DArray",
 			"sampler2DRect", "sampler2DRectShadow", "isampler2DRect", "usampler2DRect", "samplerBuffer", "isamplerBuffer", "usamplerBuffer", "sampler2DMS", "isampler2DMS", "usampler2DMS", "sampler2DMSArray", "isampler2DMSArray",
 			"usampler2DMSArray", "samplerCubeArray", "samplerCubeArrayShadow", "isamplerCubeArray", "usamplerCubeArray",
-			"SHADERED_WEB", "SHADERED_DESKTOP", "SHADERED_VERSION"
+			"SHADERED_WEB", "SHADERED_DESKTOP", "SHADERED_VERSION", "shared", "writeonly", "readonly", "image2D", "image1D", "image3D"
 		};
 		for (auto& k : keywords)
 			langDef.mKeywords.insert(k);
@@ -4747,7 +4747,25 @@ void TextEditor::LanguageDefinition::m_GLSLDocumentation(Identifiers& idents)
 	idents.insert(std::make_pair("EndStreamPrimitive", Identifier("Completes the current output primitive on stream stream and starts a new one.")));
 	idents.insert(std::make_pair("EmitVertex", Identifier("Emit the current values to the current output primitive.")));
 	idents.insert(std::make_pair("EndPrimitive", Identifier("Completes the current output primitive and starts a new one.")));
-	idents.insert(std::make_pair("barrier", Identifier("For any given static instance of barrier(), all tessellation control shader invocations for a single input patch must enter it before any will be allowed to continue beyond it.")));
+	idents.insert(std::make_pair("barrier", Identifier("Synchronize execution of multiple shader invocations")));
+	idents.insert(std::make_pair("groupMemoryBarrier", Identifier("Controls the ordering of memory transaction issued shader invocation relative to a work group")));
+	idents.insert(std::make_pair("memoryBarrier", Identifier("Controls the ordering of memory transactions issued by a single shader invocation")));
+	idents.insert(std::make_pair("memoryBarrierAtomicCounter", Identifier("Controls the ordering of operations on atomic counters issued by a single shader invocation")));
+	idents.insert(std::make_pair("memoryBarrierBuffer", Identifier("Controls the ordering of operations on buffer variables issued by a single shader invocation")));
+	idents.insert(std::make_pair("memoryBarrierImage", Identifier("Controls the ordering of operations on image variables issued by a single shader invocation")));
+	idents.insert(std::make_pair("memoryBarrierShared", Identifier("Controls the ordering of operations on shared variables issued by a single shader invocation")));
+
+	idents.insert(std::make_pair("atomicAdd", Identifier("Perform an atomic addition to a variable")));
+	idents.insert(std::make_pair("atomicAnd", Identifier("Perform an atomic logical AND operation to a variable")));
+	idents.insert(std::make_pair("atomicCompSwap", Identifier("Perform an atomic compare-exchange operation to a variable")));
+	idents.insert(std::make_pair("atomicCounter", Identifier("Return the current value of an atomic counter")));
+	idents.insert(std::make_pair("atomicCounterDecrement", Identifier("Atomically decrement a counter and return its new value")));
+	idents.insert(std::make_pair("atomicCounterIncrement", Identifier("Atomically increment a counter and return the prior value")));
+	idents.insert(std::make_pair("atomicExchange", Identifier("Perform an atomic exchange operation to a variable")));
+	idents.insert(std::make_pair("atomicMax", Identifier("Perform an atomic max operation to a variable")));
+	idents.insert(std::make_pair("atomicMin", Identifier("Perform an atomic min operation to a variable")));
+	idents.insert(std::make_pair("atomicOr", Identifier("Perform an atomic logical OR operation to a variable")));
+	idents.insert(std::make_pair("atomicXor", Identifier("Perform an atomic logical exclusive OR operation to a variable")));
 }
 
 const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::C()
