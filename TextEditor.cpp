@@ -1940,11 +1940,17 @@ std::string TextEditor::mAutcompleteParse(const std::string& str, const Coordina
 }
 void TextEditor::mAutocompleteSelect()
 {
+	UndoRecord undo;
+	undo.mBefore = mState;
+
 	auto curCoord = GetCursorPosition();
 	curCoord.mColumn = std::max<int>(curCoord.mColumn - 1, 0);
 
 	auto acStart = FindWordStart(curCoord);
 	auto acEnd = FindWordEnd(curCoord);
+
+	undo.mAddedStart = acStart;
+	int undoPopCount = std::max(0, acEnd.mColumn - acStart.mColumn) + 1;
 
 	const auto& acEntry = mACSuggestions[mACIndex];
 
@@ -1953,6 +1959,9 @@ void TextEditor::mAutocompleteSelect()
 	SetSelection(acStart, acEnd);
 	Backspace();
 	InsertText(entryText, true);
+
+	undo.mAdded = entryText;
+	undo.mAddedEnd = GetActualCursorCoordinates();
 
 	if (mIsSnippet && mSnippetTagStart.size() > 0) {
 		SetSelection(mSnippetTagStart[0], mSnippetTagEnd[0]);
@@ -1964,6 +1973,14 @@ void TextEditor::mAutocompleteSelect()
 
 	m_requestAutocomplete = false;
 	mACOpened = false;
+	
+	undo.mAfter = mState;
+
+	while (undoPopCount-- != 0) {
+		mUndoIndex--;
+		mUndoBuffer.pop_back();
+	}
+	AddUndo(undo);
 }
 
 void TextEditor::m_buildSuggestions(bool* keepACOpened)
