@@ -2271,6 +2271,8 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 			cindex += curPos.mColumn;
 
 			std::string textSrc = GetText();
+			std::transform(textSrc.begin(), textSrc.end(), textSrc.begin(), ::tolower);
+
 			size_t textLoc = textSrc.find(mFindWord, cindex);
 			if (textLoc == std::string::npos)
 				textLoc = textSrc.find(mFindWord, 0);
@@ -4783,6 +4785,40 @@ void TextEditor::LanguageDefinition::m_GLSLDocumentation(Identifiers& idents)
 	idents.insert(std::make_pair("atomicMin", Identifier("Perform an atomic min operation to a variable")));
 	idents.insert(std::make_pair("atomicOr", Identifier("Perform an atomic logical OR operation to a variable")));
 	idents.insert(std::make_pair("atomicXor", Identifier("Perform an atomic logical exclusive OR operation to a variable")));
+}
+
+const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::SPIRV()
+{
+	static bool inited = false;
+	static LanguageDefinition langDef;
+	if (!inited) {
+		/*
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("[ \\t]*#[ \\t]*[a-zA-Z_]+", PaletteIndex::Preprocessor));
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("\\'\\\\?[^\\']\\'", PaletteIndex::CharLiteral));
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("[a-zA-Z_][a-zA-Z0-9_]*", PaletteIndex::Identifier));
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("[\\[\\]\\{\\}\\!\\%\\^\\&\\*\\(\\)\\-\\+\\=\\~\\|\\<\\>\\?\\/\\;\\,\\.]", PaletteIndex::Punctuation));
+		*/
+
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("L?\\\"(\\\\.|[^\\\"])*\\\"", PaletteIndex::String));
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("[ =\\t]Op[a-zA-Z]*", PaletteIndex::Keyword));
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("%[_a-zA-Z0-9]*", PaletteIndex::Identifier));
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?[fF]?", PaletteIndex::Number));
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("[+-]?[0-9]+[Uu]?[lL]?[lL]?", PaletteIndex::Number));
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("0[0-7]+[Uu]?[lL]?[lL]?", PaletteIndex::Number));
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("0[xX][0-9a-fA-F]+[uU]?[lL]?[lL]?", PaletteIndex::Number));
+		
+		langDef.mCommentStart = "/*";
+		langDef.mCommentEnd = "*/";
+		langDef.mSingleLineComment = ";";
+
+		langDef.mCaseSensitive = true;
+		langDef.mAutoIndentation = false;
+
+		langDef.mName = "SPIR-V";
+
+		inited = true;
+	}
+	return langDef;
 }
 
 const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::C()
