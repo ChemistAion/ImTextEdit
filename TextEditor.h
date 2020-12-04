@@ -11,6 +11,7 @@
 #include <map>
 #include <regex>
 #include <imgui/imgui.h>
+#include <SHADERed/Objects/SPIRVParser.h>
 
 class TextEditor {
 public:
@@ -339,6 +340,7 @@ public:
 	bool IsColorizerEnabled() const { return mColorizerEnabled; }
 	void SetColorizerEnable(bool aValue);
 
+	Coordinates GetCorrectCursorPosition(); // The GetCursorPosition() returns the cursor pos where \t == 4 spaces
 	Coordinates GetCursorPosition() const { return GetActualCursorCoordinates(); }
 	void SetCursorPosition(const Coordinates& aPosition);
 
@@ -419,24 +421,6 @@ public:
 	void ColorizeRange(int aFromLine = 0, int aToLine = 0);
 	void ColorizeInternal();
 
-	struct FunctionData {
-		FunctionData()
-		{
-			LineStart = -1;
-			LineEnd = -1;
-		}
-		FunctionData(int lineStart, int lineEnd, const std::vector<std::string>& args, const std::vector<std::string>& locals)
-		{
-			LineStart = lineStart;
-			LineEnd = lineEnd;
-			Arguments = args;
-			Locals = locals;
-		}
-		int LineStart;
-		int LineEnd;
-		std::vector<std::string> Arguments;
-		std::vector<std::string> Locals;
-	};
 	inline void ClearAutocompleteData() 
 	{
 		mACFunctions.clear();
@@ -449,25 +433,25 @@ public:
 		mACEntries.clear();
 		mACEntrySearch.clear();
 	}
-	inline const std::unordered_map<std::string, FunctionData>& GetAutocompleteFunctions() { return mACFunctions; }
-	inline const std::vector<std::string>& GetAutocompleteUserTypes() { return mACUserTypes; }
-	inline const std::vector<std::string>& GetAutocompleteUniforms() { return mACUniforms; }
-	inline const std::vector<std::string>& GetAutocompleteGlobals() { return mACGlobals; }
-	inline void AddAutocompleteFunction(const std::string& fname, int lineStart, int lineEnd, const std::vector<std::string>& args, const std::vector<std::string>& locals)
+	inline const std::unordered_map<std::string, ed::SPIRVParser::Function>& GetAutocompleteFunctions() { return mACFunctions; }
+	inline const std::unordered_map<std::string, std::vector<ed::SPIRVParser::Variable>>& GetAutocompleteUserTypes() { return mACUserTypes; }
+	inline const std::vector<ed::SPIRVParser::Variable>& GetAutocompleteUniforms() { return mACUniforms; }
+	inline const std::vector<ed::SPIRVParser::Variable>& GetAutocompleteGlobals() { return mACGlobals; }
+	inline void SetAutocompleteFunctions(const std::unordered_map<std::string, ed::SPIRVParser::Function>& funcs)
 	{
-		mACFunctions[fname] = FunctionData(lineStart, lineEnd, args, locals);
+		mACFunctions = funcs;
 	}
-	inline void AddAutocompleteUserType(const std::string& fname)
+	inline void SetAutocompleteUserTypes(const std::unordered_map<std::string, std::vector<ed::SPIRVParser::Variable>>& utypes)
 	{
-		mACUserTypes.push_back(fname);
+		mACUserTypes = utypes;
 	}
-	inline void AddAutocompleteUniform(const std::string& fname)
+	inline void SetAutocompleteUniforms(const std::vector<ed::SPIRVParser::Variable>& unis)
 	{
-		mACUniforms.push_back(fname);
+		mACUniforms = unis;
 	}
-	inline void AddAutocompleteGlobal(const std::string& fname)
+	inline void SetAutocompleteGlobals(const std::vector<ed::SPIRVParser::Variable>& globs)
 	{
-		mACGlobals.push_back(fname);
+		mACGlobals = globs;
 	}
 	inline void AddAutocompleteEntry(const std::string& search, const std::string& display, const std::string& value)
 	{
@@ -628,16 +612,20 @@ private:
 	void mAutocompleteSelect();
 
 	bool m_requestAutocomplete, m_readyForAutocomplete;
+	void m_buildMemberSuggestions(bool* keepACOpened = nullptr);
 	void m_buildSuggestions(bool* keepACOpened = nullptr);
 	bool mActiveAutocomplete;
 	bool mAutocomplete;
-	std::unordered_map<std::string, FunctionData> mACFunctions;
-	std::vector<std::string> mACUserTypes, mACUniforms, mACGlobals;
+	std::unordered_map<std::string, ed::SPIRVParser::Function> mACFunctions;
+	std::unordered_map<std::string, std::vector<ed::SPIRVParser::Variable>> mACUserTypes;
+	std::vector<ed::SPIRVParser::Variable> mACUniforms;
+	std::vector<ed::SPIRVParser::Variable> mACGlobals;
 	std::string mACWord;
 	std::vector<std::pair<std::string, std::string>> mACSuggestions;
 	int mACIndex;
 	bool mACOpened;
-	bool mACSwitched; // if == true then allow selection with enter
+	bool mACSwitched;		// if == true then allow selection with enter
+	std::string mACObject;	// if mACObject is not empty, it means user typed '.' -> suggest struct members and methods for mACObject
 	Coordinates mACPosition;
 
 	std::vector<Shortcut> m_shortcuts;
