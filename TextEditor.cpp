@@ -2388,12 +2388,15 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 				cindex += GetLineCharacterCount(ln) + 1;
 			cindex += curPos.mColumn;
 
+			std::string wordLower = mFindWord;
+			std::transform(wordLower.begin(), wordLower.end(), wordLower.begin(), ::tolower);
+
 			std::string textSrc = GetText();
 			std::transform(textSrc.begin(), textSrc.end(), textSrc.begin(), ::tolower);
 
-			size_t textLoc = textSrc.find(mFindWord, cindex);
+			size_t textLoc = textSrc.find(wordLower, cindex);
 			if (textLoc == std::string::npos)
-				textLoc = textSrc.find(mFindWord, 0);
+				textLoc = textSrc.find(wordLower, 0);
 
 
 			if (textLoc != std::string::npos) {
