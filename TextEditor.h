@@ -142,6 +142,7 @@ public:
 	struct Breakpoint {
 		int mLine;
 		bool mEnabled;
+		bool mUseCondition;
 		std::string mCondition;
 
 		Breakpoint()
@@ -308,7 +309,7 @@ public:
 	void SetErrorMarkers(const ErrorMarkers& aMarkers) { mErrorMarkers = aMarkers; }
 
 	bool HasBreakpoint(int line);
-	void AddBreakpoint(int line, std::string condition = "", bool enabled = true);
+	void AddBreakpoint(int line, bool useCondition = false, std::string condition = "", bool enabled = true);
 	void RemoveBreakpoint(int line);
 	void SetBreakpointEnabled(int line, bool enable);
 	Breakpoint& GetBreakpoint(int line);
@@ -480,7 +481,7 @@ public:
 	std::function<void(TextEditor*, const std::string&)> OnExpressionHover;
 	std::function<bool(TextEditor*, const std::string&)> HasExpressionHover;
 	std::function<void(TextEditor*, int)> OnBreakpointRemove;
-	std::function<void(TextEditor*, int, const std::string&, bool)> OnBreakpointUpdate;
+	std::function<void(TextEditor*, int, bool, const std::string&, bool)> OnBreakpointUpdate;
 
 	std::function<void(TextEditor*)> OnContentUpdate;
 

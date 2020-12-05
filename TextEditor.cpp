@@ -832,7 +832,7 @@ void TextEditor::RemoveLine(int aStart, int aEnd)
 			RemoveBreakpoint(i.mLine);
 			continue;
 		}
-		AddBreakpoint(i.mLine >= aStart ? i.mLine - 1 : i.mLine, i.mCondition, i.mEnabled);
+		AddBreakpoint(i.mLine >= aStart ? i.mLine - 1 : i.mLine, i.mUseCondition, i.mCondition, i.mEnabled);
 	}
 
 	mLines.erase(mLines.begin() + aStart, mLines.begin() + aEnd);
@@ -866,7 +866,7 @@ void TextEditor::RemoveLine(int aIndex)
 			RemoveBreakpoint(i.mLine);
 			continue;
 		}
-		AddBreakpoint(i.mLine >= aIndex ? i.mLine - 1 : i.mLine, i.mCondition, i.mEnabled);
+		AddBreakpoint(i.mLine >= aIndex ? i.mLine - 1 : i.mLine, i.mUseCondition, i.mCondition, i.mEnabled);
 	}
 
 	mLines.erase(mLines.begin() + aIndex);
@@ -893,7 +893,7 @@ TextEditor::Line& TextEditor::InsertLine(int aIndex)
 	for (auto i : btmp)
 		RemoveBreakpoint(i.mLine);
 	for (auto i : btmp)
-		AddBreakpoint(i.mLine >= aIndex ? i.mLine + 1 : i.mLine, i.mCondition, i.mEnabled);
+		AddBreakpoint(i.mLine >= aIndex ? i.mLine + 1 : i.mLine, i.mUseCondition, i.mCondition, i.mEnabled);
 
 	return result;
 }
@@ -1329,7 +1329,7 @@ bool TextEditor::HasBreakpoint(int line)
 			return true;
 	return false;
 }
-void TextEditor::AddBreakpoint(int line, std::string condition, bool enabled)
+void TextEditor::AddBreakpoint(int line, bool useCondition, std::string condition, bool enabled)
 {
 	RemoveBreakpoint(line);
 
@@ -1337,9 +1337,10 @@ void TextEditor::AddBreakpoint(int line, std::string condition, bool enabled)
 	bkpt.mLine = line;
 	bkpt.mCondition = condition;
 	bkpt.mEnabled = enabled;
+	bkpt.mUseCondition = useCondition;
 
 	if (OnBreakpointUpdate)
-		OnBreakpointUpdate(this, line, condition, enabled);
+		OnBreakpointUpdate(this, line, useCondition, condition, enabled);
 
 	mBreakpoints.push_back(bkpt);
 }
@@ -1359,7 +1360,7 @@ void TextEditor::SetBreakpointEnabled(int line, bool enable)
 		if (mBreakpoints[i].mLine == line) {
 			mBreakpoints[i].mEnabled = enable;
 			if (OnBreakpointUpdate)
-				OnBreakpointUpdate(this, line, mBreakpoints[i].mCondition, enable);
+				OnBreakpointUpdate(this, line, mBreakpoints[i].mUseCondition, mBreakpoints[i].mCondition, enable);
 			break;
 		}
 }
@@ -1619,7 +1620,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 					if (!bkpt.mEnabled)
 						drawList->AddCircleFilled(ImVec2(startX, startY), radius - 1, mPalette[(int)PaletteIndex::BreakpointDisabled]);
 					else {
-						if (!bkpt.mCondition.empty())
+						if (bkpt.mUseCondition)
 							drawList->AddRectFilled(ImVec2(startX - radius + 3, startY - radius / 4), ImVec2(startX + radius - 3, startY + radius / 4), mPalette[(int)PaletteIndex::BreakpointOutline]);
 					}
 				}
@@ -2329,7 +2330,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 				bool isEnabled = bkpt.mEnabled;
 				if (ImGui::Selectable("Condition")) {
 					mPopupCondition_Line = line;
-					mPopupCondition_Use = !bkpt.mCondition.empty();
+					mPopupCondition_Use = bkpt.mUseCondition;
 					memcpy(mPopupCondition_Condition, bkpt.mCondition.c_str(), bkpt.mCondition.size());
 					mPopupCondition_Condition[std::min<size_t>(511, bkpt.mCondition.size())] = 0;
 					openBkptConditionWindow = true;
@@ -2632,10 +2633,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 	ImGui::PopFont();
 	ImGui::SetNextWindowSize(ImVec2(430, 175), ImGuiCond_Once);
 	if (ImGui::BeginPopupModal("Condition##condition")) {
-		if (ImGui::Checkbox("Use condition", &mPopupCondition_Use)) {
-			if (!mPopupCondition_Use)
-				mPopupCondition_Condition[0] = 0;
-		}
+		ImGui::Checkbox("Use condition", &mPopupCondition_Use);
 
 		if (!mPopupCondition_Use) {
 			ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
@@ -2659,10 +2657,11 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 					break;
 				}
 			Breakpoint& bkpt = GetBreakpoint(mPopupCondition_Line);
-			bkpt.mCondition = (mPopupCondition_Use && !isEmpty) ? mPopupCondition_Condition : "";
+			bkpt.mCondition = mPopupCondition_Condition;
+			bkpt.mUseCondition = (mPopupCondition_Use && !isEmpty);
 
 			if (OnBreakpointUpdate)
-				OnBreakpointUpdate(this, bkpt.mLine, bkpt.mCondition, bkpt.mEnabled);
+				OnBreakpointUpdate(this, bkpt.mLine, bkpt.mUseCondition, bkpt.mCondition, bkpt.mEnabled);
 
 			ImGui::CloseCurrentPopup();
 		}
