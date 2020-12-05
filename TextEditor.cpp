@@ -1054,14 +1054,14 @@ void TextEditor::HandleKeyboardInputs()
 				case ShortcutID::DeleteRight:
 				case ShortcutID::ForwardDelete: Delete(); break;
 				case ShortcutID::ForwardDeleteWord:
-					if (ctrl)
+					if (ctrl && mState.mSelectionStart == mState.mSelectionEnd)
 						MoveRight(1, true, true);
 					Delete();
 				break;
 				case ShortcutID::DeleteLeft:
 				case ShortcutID::BackwardDelete: Backspace(); break;
 				case ShortcutID::BackwardDeleteWord:
-					if (ctrl)
+					if (ctrl && (mState.mSelectionStart == mState.mSelectionEnd || mState.mSelectionStart == mState.mCursorPosition))
 						MoveLeft(1, true, true);
 					Backspace();
 				break;
@@ -1264,6 +1264,7 @@ void TextEditor::HandleMouseInputs()
 					else
 						mSelectionMode = SelectionMode::Word;
 					SetSelection(mInteractiveStart, mInteractiveEnd, mSelectionMode);
+					mState.mCursorPosition = mState.mSelectionEnd;
 				}
 
 				mLastClick = (float)ImGui::GetTime();
