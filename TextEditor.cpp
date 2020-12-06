@@ -173,6 +173,7 @@ const std::vector<TextEditor::Shortcut> TextEditor::GetDefaultShortcuts()
 	ret[(int)TextEditor::ShortcutID::DebugStop] = TextEditor::Shortcut(SDLK_F5, -1, 0, 0, 1); // SHIFT+F5
 	ret[(int)TextEditor::ShortcutID::DebugBreakpoint] = TextEditor::Shortcut(SDLK_F9, -1, 0, 0, 0); // F9
 	ret[(int)TextEditor::ShortcutID::DebugJumpHere] = TextEditor::Shortcut(SDLK_h, -1, 1, 1, 0); // CTRL+ALT+H
+	ret[(int)TextEditor::ShortcutID::DuplicateLine] = TextEditor::Shortcut(SDLK_d, -1, 0, 1, 0); // CTRL+D
 
 	return ret;
 }
@@ -1145,6 +1146,28 @@ void TextEditor::HandleKeyboardInputs()
 						else AddBreakpoint(line);
 					}
 				break;
+				case ShortcutID::DuplicateLine: {
+					TextEditor::UndoRecord undo;
+					undo.mBefore = mState;
+
+					auto oldLine = mLines[mState.mCursorPosition.mLine];
+					auto& line = InsertLine(mState.mCursorPosition.mLine);
+
+					undo.mAdded += '\n';
+					for (auto& glyph : oldLine) {
+						line.push_back(glyph);
+						undo.mAdded += glyph.mChar;
+					}
+					mState.mCursorPosition.mLine++;
+
+					undo.mAddedStart = TextEditor::Coordinates(mState.mCursorPosition.mLine-1, mState.mCursorPosition.mColumn);
+					undo.mAddedEnd = mState.mCursorPosition;
+
+					undo.mAfter = mState;
+
+					AddUndo(undo);
+					
+				} break;
 			}
 		} else if (!IsReadOnly()) {
 			for (int i = 0; i < io.InputQueueCharacters.Size; i++)

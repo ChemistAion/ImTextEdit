@@ -107,6 +107,7 @@ public:
 		DebugJumpHere,
 		DebugBreakpoint,
 		DebugStop,
+		DuplicateLine,
 		Count
 	};
 
