@@ -337,7 +337,11 @@ public:
 	bool IsReadOnly() { return mReadOnly || IsDebugging(); }
 	bool IsTextChanged() const { return mTextChanged; }
 	bool IsCursorPositionChanged() const { return mCursorPositionChanged; }
-	inline void ResetTextChanged() { mTextChanged = false; }
+	inline void ResetTextChanged()
+	{
+		mTextChanged = false;
+		mChangedLines.clear();
+	}
 
 	bool IsColorizerEnabled() const { return mColorizerEnabled; }
 	void SetColorizerEnable(bool aValue);
@@ -643,6 +647,8 @@ private:
 	std::vector<Shortcut> m_shortcuts;
 
 	bool mScrollbarMarkers;
+	std::vector<int> mChangedLines;
+
 	bool mHorizontalScroll;
 	bool mCompleteBraces;
 	bool mShowLineNumbers;

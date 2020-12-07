@@ -344,7 +344,7 @@ void TextEditor::Advance(Coordinates & aCoordinates) const
 	}
 }
 
-void TextEditor::DeleteRange(const Coordinates & aStart, const Coordinates & aEnd)
+void TextEditor::DeleteRange(const Coordinates& aStart, const Coordinates& aEnd)
 {
 	assert(aEnd >= aStart);
 	assert(!mReadOnly);
@@ -357,17 +357,14 @@ void TextEditor::DeleteRange(const Coordinates & aStart, const Coordinates & aEn
 	auto start = GetCharacterIndex(aStart);
 	auto end = GetCharacterIndex(aEnd);
 
-	if (aStart.mLine == aEnd.mLine)
-	{
+	if (aStart.mLine == aEnd.mLine) {
 		auto& line = mLines[aStart.mLine];
 		auto n = GetLineMaxColumn(aStart.mLine);
 		if (aEnd.mColumn >= n)
 			line.erase(line.begin() + start, line.end());
 		else
 			line.erase(line.begin() + start, line.begin() + end);
-	}
-	else
-	{
+	} else {
 		auto& firstLine = mLines[aStart.mLine];
 		auto& lastLine = mLines[aEnd.mLine];
 
@@ -379,6 +376,17 @@ void TextEditor::DeleteRange(const Coordinates & aStart, const Coordinates & aEn
 
 		if (aStart.mLine < aEnd.mLine)
 			RemoveLine(aStart.mLine + 1, aEnd.mLine + 1);
+	}
+
+	if (mScrollbarMarkers) {
+		for (int i = 0; i < mChangedLines.size(); i++) {
+			if (mChangedLines[i] > aEnd.mLine)
+				mChangedLines[i] -= (aEnd.mLine - aStart.mLine);
+			else if (mChangedLines[i] > aStart.mLine && mChangedLines[i] < aEnd.mLine) {
+				mChangedLines.erase(mChangedLines.begin() + i);
+				i--;
+			}
+		}
 	}
 
 	mTextChanged = true;
@@ -488,6 +496,18 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 				line.insert(line.begin() + cindex++, Glyph(*aValue++, PaletteIndex::Default));
 			aWhere.mColumn += (isTab ? mTabSize : 1);
 		}
+	}
+
+	if (mScrollbarMarkers) {
+		bool changeExists = false;
+		for (int i = 0; i < mChangedLines.size(); i++) {
+			if (mChangedLines[i] == aWhere.mLine) {
+				changeExists = true;
+				break;
+			}
+		}
+		if (!changeExists)
+			mChangedLines.push_back(aWhere.mLine);
 	}
 
 	mTextChanged = true;
@@ -841,6 +861,17 @@ void TextEditor::RemoveLine(int aStart, int aEnd)
 	mLines.erase(mLines.begin() + aStart, mLines.begin() + aEnd);
 	assert(!mLines.empty());
 
+	if (mScrollbarMarkers) {
+		for (int i = 0; i < mChangedLines.size(); i++) {
+			if (mChangedLines[i] > aEnd)
+				mChangedLines[i] -= (aEnd - aStart);
+			else if (mChangedLines[i] >= aStart && mChangedLines[i] <= aEnd) {
+				mChangedLines.erase(mChangedLines.begin() + i);
+				i--;
+			}
+		}
+	}
+
 	mTextChanged = true;
 	if (OnContentUpdate != nullptr)
 		OnContentUpdate(this);
@@ -874,6 +905,19 @@ void TextEditor::RemoveLine(int aIndex)
 
 	mLines.erase(mLines.begin() + aIndex);
 	assert(!mLines.empty());
+
+
+	if (mScrollbarMarkers) {
+		for (int i = 0; i < mChangedLines.size(); i++) {
+			if (mChangedLines[i] > aIndex)
+				mChangedLines[i]--;
+			else if (mChangedLines[i] == aIndex) {
+				mChangedLines.erase(mChangedLines.begin() + i);
+				i--;
+			}
+
+		}
+	}
 
 	mTextChanged = true;
 	if (OnContentUpdate != nullptr)
@@ -2436,11 +2480,21 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 			ImRect scrollBarRect = ImGui::GetWindowScrollbarRect(window, ImGuiAxis_Y);
 			ImGui::PushClipRect(scrollBarRect.Min, scrollBarRect.Max, false);
 			int mSelectedLine = mState.mCursorPosition.mLine;
+
+			// current line marker
 			if (mSelectedLine != 0) {
 				float lineStartY = std::round(scrollBarRect.Min.y + (mSelectedLine - 0.5f) / mLines.size() * scrollBarRect.GetHeight());
 				drawList->AddLine(ImVec2(scrollBarRect.Min.x, lineStartY), ImVec2(scrollBarRect.Max.x, lineStartY), (mPalette[(int)PaletteIndex::Default] & 0x00FFFFFFu) | 0x83000000u, 3);
 			}
 
+			// changed lines marker
+			for (int line : mChangedLines) {
+				float lineStartY = std::round(scrollBarRect.Min.y + (float(line) - 0.5f) / mLines.size() * scrollBarRect.GetHeight());
+				float lineEndY = std::round(scrollBarRect.Min.y + (float(line+1) - 0.5f) / mLines.size() * scrollBarRect.GetHeight());
+				drawList->AddRectFilled(ImVec2(scrollBarRect.Min.x + scrollBarRect.GetWidth() * 0.6f, lineStartY), ImVec2(scrollBarRect.Min.x + scrollBarRect.GetWidth(), lineEndY), 0xFF8CE6F0);
+			}
+
+			// error markers
 			for (auto& error : mErrorMarkers) {
 				float lineStartY = std::round(scrollBarRect.Min.y + (float(error.first) - 0.5f) / mLines.size() * scrollBarRect.GetHeight());
 				drawList->AddRectFilled(ImVec2(scrollBarRect.Min.x, lineStartY), ImVec2(scrollBarRect.Min.x + scrollBarRect.GetWidth() * 0.4f, lineStartY + 6.0f), mPalette[(int)PaletteIndex::ErrorMarker]);
@@ -2821,18 +2875,15 @@ void TextEditor::SetText(const std::string & aText)
 	mLines.emplace_back(Line());
 	for (auto chr : aText)
 	{
-		if (chr == '\r')
-		{
+		if (chr == '\r') {
 			// ignore the carriage return character
-		}
-		else if (chr == '\n')
+		} else if (chr == '\n')
 			mLines.emplace_back(Line());
 		else
-		{
 			mLines.back().emplace_back(Glyph(chr, PaletteIndex::Default));
-		}
 	}
 
+	
 	mTextChanged = true;
 	mScrollToTop = true;
 
@@ -3051,6 +3102,18 @@ void TextEditor::EnterCharacter(ImWchar aChar, bool aShift)
 	if (mActiveAutocomplete && aChar <= 127 && (isalpha(aChar) || aChar == '_')) {
 		m_requestAutocomplete = true;
 		m_readyForAutocomplete = false;
+	}
+
+	if (mScrollbarMarkers) {
+		bool changeExists = false;
+		for (int i = 0; i < mChangedLines.size(); i++) {
+			if (mChangedLines[i] == mState.mCursorPosition.mLine) {
+				changeExists = true;
+				break;
+			}
+		}
+		if (!changeExists)
+			mChangedLines.push_back(mState.mCursorPosition.mLine);
 	}
 
 	mTextChanged = true;
@@ -3557,6 +3620,18 @@ void TextEditor::Delete()
 				line.erase(line.begin() + cindex);
 		}
 
+		if (mScrollbarMarkers) {
+			bool changeExists = false;
+			for (int i = 0; i < mChangedLines.size(); i++) {
+				if (mChangedLines[i] == mState.mCursorPosition.mLine) {
+					changeExists = true;
+					break;
+				}
+			}
+			if (!changeExists)
+				mChangedLines.push_back(mState.mCursorPosition.mLine);
+		}
+
 		mTextChanged = true;
 		if (OnContentUpdate != nullptr)
 			OnContentUpdate(this);
@@ -3650,6 +3725,18 @@ void TextEditor::Backspace()
 				u.mRemovedStart.mColumn -= (chVal == '\t') ? mTabSize : 1;
 				mState.mCursorPosition.mColumn -= (chVal == '\t') ? mTabSize : 1;
 			}
+		}
+
+		if (mScrollbarMarkers) {
+			bool changeExists = false;
+			for (int i = 0; i < mChangedLines.size(); i++) {
+				if (mChangedLines[i] == mState.mCursorPosition.mLine) {
+					changeExists = true;
+					break;
+				}
+			}
+			if (!changeExists)
+				mChangedLines.push_back(mState.mCursorPosition.mLine);
 		}
 
 		mTextChanged = true;
