@@ -399,6 +399,7 @@ public:
 	inline void SetCompleteBraces(bool s) { mCompleteBraces = s; }
 	inline void SetHorizontalScroll(bool s) { mHorizontalScroll = s; }
 	inline void SetSmartPredictions(bool s) { mAutocomplete = s; }
+	inline void SetFunctionDeclarationTooltip(bool s) { mFunctionDeclarationTooltipEnabled = s; }
 	inline void SetFunctionTooltips(bool s) { mFuncTooltips = s; }
 	inline void SetActiveAutocomplete(bool cac) { mActiveAutocomplete = cac; }
 	inline void SetScrollbarMarkers(bool markers) { mScrollbarMarkers = markers; }
@@ -583,6 +584,15 @@ private:
 	{
 		return h * (mUIScale + mEditorFontSize / 18.0f - 1.0f);
 	}
+
+	bool mFunctionDeclarationTooltipEnabled;
+	TextEditor::Coordinates mFunctionDeclarationCoord;
+	bool mFunctionDeclarationTooltip;
+	std::string mFunctionDeclaration;
+	void mOpenFunctionDeclarationTooltip(const std::string& obj, TextEditor::Coordinates coord);
+
+	std::string mBuildFunctionDef(const std::string& func, const std::string& lang);
+	std::string mBuildVariableType(const ed::SPIRVParser::Variable& var, const std::string& lang);
 
 	float mLineSpacing;
 	Lines mLines;

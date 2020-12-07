@@ -79,6 +79,8 @@ TextEditor::TextEditor()
 	, m_requestAutocomplete(false)
 	, mScrollbarMarkers(false)
 	, mAutoindentOnPaste(false)
+	, mFunctionDeclarationTooltip(false)
+	, mFunctionDeclarationTooltipEnabled(false)
 	, mIsSnippet(false)
 	, mSnippetTagSelected(0)
 	, mSidebar(true)
@@ -1019,7 +1021,7 @@ void TextEditor::HandleKeyboardInputs()
 		}
 
 		int keyCount = 0;
-		bool keepACOpened = false;
+		bool keepACOpened = false, functionTooltipState = mFunctionDeclarationTooltip;
 		bool hasWrittenALetter = false;
 		if (actionID != ShortcutID::Count) {
 			if (actionID != ShortcutID::Indent)
@@ -1166,7 +1168,6 @@ void TextEditor::HandleKeyboardInputs()
 					undo.mAfter = mState;
 
 					AddUndo(undo);
-					
 				} break;
 			}
 		} else if (!IsReadOnly()) {
@@ -1226,11 +1227,13 @@ void TextEditor::HandleKeyboardInputs()
 			m_readyForAutocomplete = false;
 		}
 
-		if (mACOpened && !keepACOpened) {
+		if ((mACOpened && !keepACOpened) || mFunctionDeclarationTooltip) {
 			for (size_t i = 0; i < ImGuiKey_COUNT; i++)
 				keyCount += ImGui::IsKeyPressed(ImGui::GetKeyIndex(i));
 
 			if (keyCount != 0) {
+				if (functionTooltipState == mFunctionDeclarationTooltip)
+					mFunctionDeclarationTooltip = false;
 				mACOpened = false;
 				if (!hasWrittenALetter)
 					mACObject = "";
@@ -1254,8 +1257,10 @@ void TextEditor::HandleMouseInputs()
 			auto t = ImGui::GetTime();
 			auto tripleClick = click && !doubleClick && (mLastClick != -1.0f && (t - mLastClick) < io.MouseDoubleClickTime);
 
-			if (click || doubleClick || tripleClick)
+			if (click || doubleClick || tripleClick) {
 				mIsSnippet = false;
+				mFunctionDeclarationTooltip = false;
+			}
 
 			/*
 				Left mouse button triple click
@@ -1790,11 +1795,41 @@ void TextEditor::RenderInternal(const char* aTitle)
 								OnIdentifierHover(this, id);
 								ImGui::EndTooltip();
 							}
+						} else if (mACFunctions.count(id)) {
+							ImGui::BeginTooltip();
+							ImGui::TextUnformatted(mBuildFunctionDef(id, mLanguageDefinition.mName).c_str());
+							ImGui::EndTooltip();
 						}
 					}
 				}
 			}
 		}
+	}
+
+	// function tooltip
+	if (mFunctionDeclarationTooltip) {
+		const float ttWidth = 350, ttHeight = 50;
+		ImVec2 ttPos = CoordinatesToScreenPos(mFunctionDeclarationCoord);
+		ttPos.y += mCharAdvance.y;
+		ttPos.x += ImGui::GetScrollX();
+
+		drawList->AddRectFilled(ttPos, ImVec2(ttPos.x + mUICalculateSize(ttWidth), ttPos.y + mUICalculateSize(ttHeight)), ImGui::GetColorU32(ImGuiCol_FrameBg));
+
+		ImFont* font = ImGui::GetFont();
+		ImGui::PopFont();
+
+		ImGui::SetNextWindowPos(ttPos, ImGuiCond_Always);
+		ImGui::BeginChild("##texteditor_functooltip", ImVec2(mUICalculateSize(ttWidth), mUICalculateSize(ttHeight)), true);
+
+		ImGui::TextWrapped("%s", mFunctionDeclaration.c_str());
+
+		ImGui::EndChild();
+
+		ImGui::PushFont(font);
+
+		ImGui::SetWindowFocus();
+		if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Escape)))
+			mFunctionDeclarationTooltip = false;
 	}
 
 	// suggestions window
@@ -1873,6 +1908,91 @@ void TextEditor::RenderInternal(const char* aTitle)
 		ImVec2 dbgPos = ImVec2(mUICursorPos.x + scrollX + mWindowWidth / 2 - mDebugBarWidth / 2, mUICursorPos.y + ImGui::GetScrollY());
 		drawList->AddRectFilled(dbgPos, ImVec2(dbgPos.x + mDebugBarWidth, dbgPos.y + mDebugBarHeight), ImGui::GetColorU32(ImGuiCol_FrameBg));
 	}
+}
+
+void TextEditor::mOpenFunctionDeclarationTooltip(const std::string& obj, TextEditor::Coordinates coord)
+{
+	if (mACFunctions.count(obj)) {
+		mFunctionDeclarationTooltip = true;
+		mFunctionDeclarationCoord = FindWordStart(coord);
+		mFunctionDeclaration = mBuildFunctionDef(obj, mLanguageDefinition.mName);
+	}
+}
+
+std::string TextEditor::mBuildFunctionDef(const std::string& func, const std::string& lang)
+{
+	if (mACFunctions.count(func) == 0)
+		return "";
+
+	const auto& funcDef = mACFunctions[func];
+
+	std::string ret = mBuildVariableType(funcDef.ReturnType, lang) + " " + func + "(";
+
+	for (size_t i = 0; i < funcDef.Arguments.size(); i++) {
+		ret += mBuildVariableType(funcDef.Arguments[i], lang) + " " + funcDef.Arguments[i].Name;
+
+		if (i != funcDef.Arguments.size() - 1)
+			ret += ", ";
+	}
+
+	return ret + ")";
+}
+std::string TextEditor::mBuildVariableType(const ed::SPIRVParser::Variable& var, const std::string& lang)
+{
+	switch (var.Type) {
+		case ed::SPIRVParser::ValueType::Bool:
+			return "bool";
+
+		case ed::SPIRVParser::ValueType::Float:
+			return "float";
+
+		case ed::SPIRVParser::ValueType::Int:
+			return "int";
+
+		case ed::SPIRVParser::ValueType::Void:
+			return "void";
+
+		case ed::SPIRVParser::ValueType::Struct:
+			return var.TypeName;
+
+		case ed::SPIRVParser::ValueType::Vector: {
+			char count = var.TypeComponentCount + '0';
+			if (lang == "HLSL") {
+				switch (var.BaseType) {
+				case ed::SPIRVParser::ValueType::Bool:
+					return "bool" + count;
+
+				case ed::SPIRVParser::ValueType::Float:
+					return "float" + count;
+
+				case ed::SPIRVParser::ValueType::Int:
+					return "int" + count;
+				}
+			} else {
+				switch (var.BaseType) {
+				case ed::SPIRVParser::ValueType::Bool:
+					return "bvec" + count;
+
+				case ed::SPIRVParser::ValueType::Float:
+					return "vec" + count;
+
+				case ed::SPIRVParser::ValueType::Int:
+					return "ivec" + count;
+				}
+			}
+		} break;
+
+		case ed::SPIRVParser::ValueType::Matrix: {
+			std::string count = "" + (var.TypeComponentCount + '0');
+			if (lang == "HLSL") {
+				return "float" + count + "x" + count;
+			} else {
+				return "mat" + count;
+			}
+		} break;
+	}
+
+	return "";
 }
 
 std::string TextEditor::mAutcompleteParse(const std::string& str, const Coordinates& start)
@@ -2944,6 +3064,39 @@ void TextEditor::EnterCharacter(ImWchar aChar, bool aShift)
 
 	Colorize(coord.mLine - 1, 3);
 	EnsureCursorVisible();
+
+	// function tooltip
+	if (mFunctionDeclarationTooltipEnabled) {
+		if (aChar == '(') {
+			auto curPos = GetCorrectCursorPosition();
+			std::string obj = GetWordAt(curPos);
+			mOpenFunctionDeclarationTooltip(obj, curPos);
+		} else if (aChar == ',') {
+			auto curPos = GetCorrectCursorPosition();
+			curPos.mColumn--;
+
+			const auto& line = mLines[curPos.mLine];
+			std::string obj = "";
+			int weight = 0;
+
+			for (; curPos.mColumn > 0; curPos.mColumn--) {
+				if (line[curPos.mColumn].mChar == '(') {
+					if (weight == 0) {
+						obj = GetWordAt(curPos);
+						break;
+					}
+
+					weight--;
+				}
+				if (line[curPos.mColumn].mChar == ')')
+					weight++;
+			}
+
+			if (!obj.empty())
+				mOpenFunctionDeclarationTooltip(obj, curPos);
+		}
+	}
+
 
 	// auto brace completion
 	if (mCompleteBraces) {
