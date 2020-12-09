@@ -488,6 +488,8 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 		{
 			if (*aValue == '{')
 				autoIndent += mTabSize;
+			else if (*aValue == '}')
+				autoIndent -= mTabSize;
 
 			bool isTab = *aValue == '\t';
 			auto& line = mLines[aWhere.mLine];
