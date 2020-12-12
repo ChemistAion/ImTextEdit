@@ -108,6 +108,8 @@ public:
 		DebugBreakpoint,
 		DebugStop,
 		DuplicateLine,
+		CommentLines,
+		UncommentLines,
 		Count
 	};
 

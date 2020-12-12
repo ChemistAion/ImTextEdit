@@ -175,7 +175,9 @@ const std::vector<TextEditor::Shortcut> TextEditor::GetDefaultShortcuts()
 	ret[(int)TextEditor::ShortcutID::DebugStop] = TextEditor::Shortcut(SDLK_F5, -1, 0, 0, 1); // SHIFT+F5
 	ret[(int)TextEditor::ShortcutID::DebugBreakpoint] = TextEditor::Shortcut(SDLK_F9, -1, 0, 0, 0); // F9
 	ret[(int)TextEditor::ShortcutID::DebugJumpHere] = TextEditor::Shortcut(SDLK_h, -1, 1, 1, 0); // CTRL+ALT+H
-	ret[(int)TextEditor::ShortcutID::DuplicateLine] = TextEditor::Shortcut(SDLK_d, -1, 0, 1, 0); // CTRL+D
+	ret[(int)TextEditor::ShortcutID::DuplicateLine] = TextEditor::Shortcut(SDLK_d, -1, 0, 1, 0);	// CTRL+D
+	ret[(int)TextEditor::ShortcutID::CommentLines] = TextEditor::Shortcut(SDLK_k, -1, 0, 1, 1); // CTRL+SHIFT+K
+	ret[(int)TextEditor::ShortcutID::UncommentLines] = TextEditor::Shortcut(SDLK_u, -1, 0, 1, 1); // CTRL+SHIFT+U
 
 	return ret;
 }
@@ -1214,6 +1216,22 @@ void TextEditor::HandleKeyboardInputs()
 					undo.mAfter = mState;
 
 					AddUndo(undo);
+				} break;
+				case ShortcutID::CommentLines: {
+					for (int l = mState.mSelectionStart.mLine; l <= mState.mSelectionEnd.mLine && l < mLines.size(); l++) {
+						mLines[l].insert(mLines[l].begin(), TextEditor::Glyph('/', TextEditor::PaletteIndex::Comment));
+						mLines[l].insert(mLines[l].begin(), TextEditor::Glyph('/', TextEditor::PaletteIndex::Comment));
+					}
+					Colorize(mState.mSelectionStart.mLine, mState.mSelectionEnd.mLine);
+				} break;
+				case ShortcutID::UncommentLines: {
+					for (int l = mState.mSelectionStart.mLine; l <= mState.mSelectionEnd.mLine && l < mLines.size(); l++) {
+						if (mLines[l].size() >= 2) {
+							if (mLines[l][0].mChar == '/' && mLines[l][1].mChar == '/')
+								mLines[l].erase(mLines[l].begin(), mLines[l].begin() + 2);
+						}
+					}
+					Colorize(mState.mSelectionStart.mLine, mState.mSelectionEnd.mLine);
 				} break;
 			}
 		} else if (!IsReadOnly()) {
