@@ -393,6 +393,9 @@ public:
 	void Undo(int aSteps = 1);
 	void Redo(int aSteps = 1);
 
+	inline void SetHighlightedLines(const std::vector<int>& lines) { mHighlightedLines = lines; }
+	inline void ClearHighlightedLines() { mHighlightedLines.clear(); }
+
 	inline void SetTabSize(int s) { mTabSize = std::max<int>(0, std::min<int>(32, s)); }
 	inline int GetTabSize() { return mTabSize; }
 
@@ -650,6 +653,8 @@ private:
 
 	bool mScrollbarMarkers;
 	std::vector<int> mChangedLines;
+
+	std::vector<int> mHighlightedLines;
 
 	bool mHorizontalScroll;
 	bool mCompleteBraces;

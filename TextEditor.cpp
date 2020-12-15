@@ -1627,6 +1627,14 @@ void TextEditor::RenderInternal(const char* aTitle)
 				}
 			}
 
+			// highlight the user defined lines
+			if (mHighlightLine) {
+				if (std::find(mHighlightedLines.begin(), mHighlightedLines.end(), lineNo) != mHighlightedLines.end()) {
+					auto end = ImVec2(start.x + contentSize.x + scrollX, start.y + mCharAdvance.y);
+					drawList->AddRectFilled(start, end, mPalette[(int)(PaletteIndex::CurrentLineFill)]);
+				}
+			}
+
 			// Render colorized text
 			auto prevColor = line.empty() ? mPalette[(int)PaletteIndex::Default] : GetGlyphColor(line[0]);
 			ImVec2 bufferOffset;
