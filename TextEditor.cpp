@@ -6,6 +6,7 @@
 #include <string>
 #include <regex>
 #include <cmath>
+#include <stack>
 
 #include "TextEditor.h"
 
@@ -3906,6 +3907,252 @@ void TextEditor::Redo(int aSteps)
 {
 	while (CanRedo() && aSteps-- > 0)
 		mUndoBuffer[mUndoIndex++].Redo(this);
+}
+
+std::vector<std::string> TextEditor::GetRelevantExpressions(int line)
+{
+	std::vector<std::string> ret;
+	line--;
+
+	if (line < 0 || (mLanguageDefinition.mName != "HLSL" && mLanguageDefinition.mName != "GLSL"))
+		return ret;
+
+	std::string expr = "";
+	for (int i = 0; i < mLines[line].size(); i++)
+		expr += mLines[line][i].mChar;
+
+	enum class TokenType {
+		Identifier,
+		Operator,
+		Number,
+		Parenthesis,
+		Comma,
+		Semicolon
+	};
+	struct Token {
+		TokenType Type;
+		std::string Content;
+	};
+
+	char buffer[512] = { 0 };
+	int bufferLoc = 0;
+	std::vector<Token> tokens;
+
+	// convert expression into list of tokens
+	const char* e = expr.c_str();
+	while (*e != 0) {
+		if (*e == '*' || *e == '/' || *e == '+' || *e == '-' || *e == '%' || *e == '&' || *e == '|' || *e == '=' || *e == '(' || *e == ')' || *e == ',' || *e == ';' || *e == '<' || *e == '>') {
+			if (bufferLoc != 0)
+				tokens.push_back({ TokenType::Identifier, std::string(buffer) });
+
+			memset(buffer, 0, 512);
+			bufferLoc = 0;
+
+			if (*e == '(' || *e == ')')
+				tokens.push_back({ TokenType::Parenthesis, std::string(e, 1) });
+			else if (*e == ',')
+				tokens.push_back({ TokenType::Comma, "," });
+			else if (*e == ';')
+				tokens.push_back({ TokenType::Semicolon, ";" });
+			else
+				tokens.push_back({ TokenType::Operator, std::string(e, 1) });
+		} else if (*e == '{' || *e == '}')
+			break;
+		else if (*e == '\n' || *e == '\r' || *e == ' ' || *e == '\t') {
+			// empty the buffer if needed
+			if (bufferLoc != 0) {
+				tokens.push_back({ TokenType::Identifier, std::string(buffer) });
+
+				memset(buffer, 0, 512);
+				bufferLoc = 0;
+			}
+		} else {
+			buffer[bufferLoc] = *e;
+			bufferLoc++;
+		}
+		e++;
+	}
+
+	// empty the buffer
+	if (bufferLoc != 0)
+		tokens.push_back({ TokenType::Identifier, std::string(buffer) });
+
+	// some "post processing"
+	int multilineComment = 0;
+	for (int i = 0; i < tokens.size(); i++) {
+		if (tokens[i].Type == TokenType::Identifier) {
+			if (tokens[i].Content.size() > 0) {
+				if (tokens[i].Content[0] == '.' || isdigit(tokens[i].Content[0]))
+					tokens[i].Type = TokenType::Number;
+				else if (tokens[i].Content == "true" || tokens[i].Content == "false")
+					tokens[i].Type = TokenType::Number;
+			}
+		} else if (i != 0 && tokens[i].Type == TokenType::Operator) {
+			if (tokens[i - 1].Type == TokenType::Operator) {
+				// comment
+				if (tokens[i].Content == "/" && tokens[i - 1].Content == "/") {
+					tokens.erase(tokens.begin() + i - 1, tokens.end());
+					break;
+				} else if (tokens[i - 1].Content == "/" && tokens[i].Content == "*")
+					multilineComment = i - 1;
+				else if (tokens[i - 1].Content == "*" && tokens[i].Content == "/") {
+					tokens.erase(tokens.begin() + multilineComment, tokens.begin() + i + 1);
+					i -= (i - multilineComment) - 1;
+					multilineComment = 0;
+					continue;
+				} else {
+					// &&, <=, ...
+					tokens[i - 1].Content += tokens[i].Content;
+					tokens.erase(tokens.begin() + i);
+					i--;
+					continue;
+				}
+			}
+		}
+	}
+
+	// 1. get all the identifiers (highest priority)
+	for (int i = 0; i < tokens.size(); i++) {
+		if (tokens[i].Type == TokenType::Identifier) {
+			if (i == tokens.size() - 1 || tokens[i + 1].Content != "(")
+				if (std::count(ret.begin(), ret.end(), tokens[i].Content) == 0)
+					ret.push_back(tokens[i].Content);
+		}
+	}
+
+	// 2. get all the function calls, their arguments and expressions
+	std::stack<std::string> funcStack;
+	std::stack<std::string> argStack;
+	std::string exprBuffer = "";
+	int exprParenthesis = 0;
+	int forSection = -1;
+	for (int i = 0; i < tokens.size(); i++) {
+		if ((forSection == -1 || forSection == 1) && tokens[i].Type == TokenType::Identifier && i + 1 < tokens.size() && tokens[i + 1].Content == "(") {
+			if (tokens[i].Content == "if" || tokens[i].Content == "for" || tokens[i].Content == "while") {
+				if (tokens[i].Content == "for")
+					forSection = 0;
+				else
+					i++; // skip '('
+				continue;
+			}
+
+			funcStack.push(tokens[i].Content + "(");
+			argStack.push("");
+			i++;
+			continue;
+		} else if ((forSection == -1 || forSection == 1) && (tokens[i].Type == TokenType::Comma || tokens[i].Content == ")") && !argStack.empty() && !funcStack.empty()) {
+			funcStack.top() += argStack.top().substr(0, argStack.top().size() - 1) + tokens[i].Content;
+
+			if (tokens[i].Content == ")") {
+				std::string topFunc = funcStack.top();
+				funcStack.pop();
+
+				if (!argStack.top().empty())
+					ret.push_back(argStack.top().substr(0, argStack.top().size() - 1));
+				argStack.pop();
+				if (!argStack.empty())
+					argStack.top() += topFunc + " ";
+
+				ret.push_back(topFunc);
+
+				if (funcStack.empty())
+					exprBuffer += topFunc + " ";
+			} else if (tokens[i].Type == TokenType::Comma) {
+				funcStack.top() += " ";
+				ret.push_back(argStack.top().substr(0, argStack.top().size() - 1));
+				argStack.top() = "";
+			}
+		} else if (tokens[i].Type == TokenType::Semicolon) {
+			if (forSection != -1) {
+				if (forSection == 1 && !exprBuffer.empty()) {
+					ret.push_back(exprBuffer);
+					exprBuffer.clear();
+					exprParenthesis = 0;
+				}
+				forSection++;
+			}
+		} else if (forSection == -1 || forSection == 1) {
+			if (tokens[i].Content == "(")
+				exprParenthesis++;
+			else if (tokens[i].Content == ")")
+				exprParenthesis--;
+
+			if (!argStack.empty())
+				argStack.top() += tokens[i].Content + " ";
+			else if (exprParenthesis < 0) {
+				if (!exprBuffer.empty())
+					ret.push_back(exprBuffer.substr(0, exprBuffer.size() - 1));
+				exprBuffer.clear();
+				exprParenthesis = 0;
+			} else if (tokens[i].Type == TokenType::Operator && (tokens[i].Content.size() >= 2 || tokens[i].Content == "=")) {
+				if (!exprBuffer.empty())
+					ret.push_back(exprBuffer.substr(0, exprBuffer.size() - 1));
+				exprBuffer.clear();
+				exprParenthesis = 0;
+			} else {
+				bool isKeyword = false;
+				for (const auto& kwd : mLanguageDefinition.mKeywords) {
+					if (kwd == tokens[i].Content) {
+						isKeyword = true;
+						break;
+					}
+				}
+				if (!isKeyword)
+					exprBuffer += tokens[i].Content + " ";
+			}
+		}
+	}
+
+	if (!exprBuffer.empty())
+		ret.push_back(exprBuffer.substr(0, exprBuffer.size() - 1));
+
+	// remove duplicates, numbers & keywords
+	for (int i = 0; i < ret.size(); i++) {
+		std::string r = ret[i];
+		bool eraseR = false;
+
+		// empty or duplicate
+		if (ret.empty() || std::count(ret.begin(), ret.begin() + i, r) > 0)
+			eraseR = true;
+
+		// boolean
+		if (r == "true" || r == "false")
+			eraseR = true;
+
+		// number
+		bool isNumber = true;
+		for (int i = 0; i < r.size(); i++)
+			if (!isdigit(r[i]) && r[i] != '.' && r[i] != 'f') {
+				isNumber = false;
+				break;
+			}
+		if (isNumber)
+			eraseR = true;
+
+		// keyword
+		if (!eraseR) {
+			for (const auto& ident : mLanguageDefinition.mIdentifiers)
+				if (ident.first == r) {
+					eraseR = true;
+					break;
+				}
+
+			for (const auto& kwd : mLanguageDefinition.mKeywords)
+				if (kwd == r) {
+					eraseR = true;
+					break;
+				}
+		}
+
+		// delete it from the array
+		if (eraseR) {
+			ret.erase(ret.begin() + i);
+			i--;
+			continue;
+		}
+	}
+
+	return ret;
 }
 
 const TextEditor::Palette & TextEditor::GetDarkPalette()

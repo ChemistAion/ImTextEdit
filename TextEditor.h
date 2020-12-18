@@ -393,6 +393,8 @@ public:
 	void Undo(int aSteps = 1);
 	void Redo(int aSteps = 1);
 
+	std::vector<std::string> GetRelevantExpressions(int line);
+
 	inline void SetHighlightedLines(const std::vector<int>& lines) { mHighlightedLines = lines; }
 	inline void ClearHighlightedLines() { mHighlightedLines.clear(); }
 
