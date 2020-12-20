@@ -2029,7 +2029,7 @@ std::string TextEditor::mBuildVariableType(const ed::SPIRVParser::Variable& var,
 			return var.TypeName;
 
 		case ed::SPIRVParser::ValueType::Vector: {
-			char count = var.TypeComponentCount + '0';
+			std::string count = std::string(1, var.TypeComponentCount + '0');
 			if (lang == "HLSL") {
 				switch (var.BaseType) {
 				case ed::SPIRVParser::ValueType::Bool:
@@ -2056,7 +2056,7 @@ std::string TextEditor::mBuildVariableType(const ed::SPIRVParser::Variable& var,
 		} break;
 
 		case ed::SPIRVParser::ValueType::Matrix: {
-			std::string count = "" + (var.TypeComponentCount + '0');
+			std::string count = std::string(1, var.TypeComponentCount + '0');
 			if (lang == "HLSL") {
 				return "float" + count + "x" + count;
 			} else {
