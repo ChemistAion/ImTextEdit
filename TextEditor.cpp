@@ -425,7 +425,7 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 		}
 		else if (*aValue == '\n')
 		{
-			if (cindex < (int)mLines[aWhere.mLine].size())
+			if (cindex < (int)mLines[aWhere.mLine].size() && cindex >= 0)
 			{
 				auto& newLine = InsertLine(aWhere.mLine + 1);
 				auto& line = mLines[aWhere.mLine];
@@ -492,7 +492,7 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 			if (*aValue == '{')
 				autoIndent += mTabSize;
 			else if (*aValue == '}')
-				autoIndent -= mTabSize;
+				autoIndent = std::max(0, autoIndent - mTabSize);
 
 			bool isTab = *aValue == '\t';
 			auto& line = mLines[aWhere.mLine];
