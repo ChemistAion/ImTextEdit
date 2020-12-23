@@ -453,8 +453,15 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 					autoIndent = std::max(0, autoIndent - mTabSize);
 
 				int actualAutoIndent = autoIndent;
-				if (lineIsAlreadyIndent)
+				if (lineIsAlreadyIndent) {
 					actualAutoIndent = autoIndentStart;
+
+					const char* aValueCopy = aValue;
+					while (isspace(*aValueCopy) && *aValueCopy != '\n' && *aValueCopy != '\r' && *aValueCopy != 0) {
+						actualAutoIndent = std::max(0, actualAutoIndent - mTabSize);
+						aValueCopy++;
+					}
+				}
 
 				// add tabs
 				int tabCount = actualAutoIndent / mTabSize;
