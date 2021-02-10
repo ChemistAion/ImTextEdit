@@ -416,6 +416,7 @@ public:
 	inline void SetScrollbarMarkers(bool markers) { mScrollbarMarkers = markers; }
 	inline void SetSidebarVisible(bool s) { mSidebar = s; }
 	inline void SetSearchEnabled(bool s) { mHasSearch = s; }
+	inline void SetHiglightBrackets(bool s) { mHighlightBrackets = s; }
 
 	inline void SetUIScale(float scale) { mUIScale = scale; }
 	inline void SetUIFontSize(float size) { mUIFontSize = size; }
@@ -662,6 +663,7 @@ private:
 	bool mCompleteBraces;
 	bool mShowLineNumbers;
 	bool mHighlightLine;
+	bool mHighlightBrackets;
 	bool mInsertSpaces;
 	bool mSmartIndent;
 	bool mFocused;

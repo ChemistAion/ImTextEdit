@@ -36,11 +36,28 @@ bool equals(InputIt1 first1, InputIt1 last1,
 	return first1 == last1 && first2 == last2;
 }
 
+int isBracket(char ch) {
+	if (ch == '(' || ch == '[' || ch == '{')
+		return 1;
+	if (ch == ')' || ch == ']' || ch == '}')
+		return 2;
+	return 0;
+}
+bool isClosingBracket(char open, char actual)
+{
+	return (open == '{' && actual == '}') || (open == '[' && actual == ']') || (open == '(' && actual == ')');
+}
+bool isOpeningBracket(char close, char actual)
+{
+	return (close == '}' && actual == '{') || (close == ']' && actual == '[') || (close == ')' && actual == '(');
+}
+
 TextEditor::TextEditor()
 	: mLineSpacing(1.0f)
 	, mUndoIndex(0)
 	, mInsertSpaces(false)
 	, mTabSize(4)
+	, mHighlightBrackets(false)
 	, mAutocomplete(true)
 	, mACOpened(false)
 	, mHighlightLine(true)
@@ -1516,6 +1533,90 @@ void TextEditor::RenderInternal(const char* aTitle)
 	{
 		float spaceSize = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, " ", nullptr, nullptr).x;
 
+		// find bracket pairs to highlight
+		bool highlightBrackets = false;
+		Coordinates highlightBracketCoord = mState.mCursorPosition, highlightBracketCursor = mState.mCursorPosition;
+		if (mHighlightBrackets && mState.mSelectionStart == mState.mSelectionEnd) {
+			if (mState.mCursorPosition.mLine <= mLines.size()) {
+				int lineSize = mLines[mState.mCursorPosition.mLine].size();
+				Coordinates start = GetCorrectCursorPosition();
+				start.mColumn = std::min<int>(start.mColumn, mLines[start.mLine].size()-1);
+				highlightBracketCursor = start;
+
+				if (lineSize != 0 && start.mLine >= 0 && start.mLine < mLines.size() && start.mColumn >= 0 && start.mColumn < mLines[start.mLine].size()) {
+					char c1 = mLines[start.mLine][start.mColumn].mChar;
+					char c2 = mLines[start.mLine][std::max<int>(0, start.mColumn - 1)].mChar;
+					int b1 = isBracket(c1);
+					int b2 = isBracket(c2);
+
+					if (b1 || b2) {
+						char search = c1;
+						int dir = b1;
+						if (b2) {
+							search = c2;
+							dir = b2;
+							start.mColumn = std::max<int>(0, start.mColumn - 1);
+							highlightBracketCursor = start;
+						}
+
+						int weight = 0;
+
+						// go forward
+						if (dir == 1) {
+							while (start.mLine < mLines.size()) {
+								for (; start.mColumn < mLines[start.mLine].size(); start.mColumn++) {
+									char curChar = mLines[start.mLine][start.mColumn].mChar;
+									if (curChar == search)
+										weight++;
+									else if (isClosingBracket(search, curChar)) {
+										weight--;
+										if (weight <= 0) {
+											highlightBrackets = true;
+											highlightBracketCoord = start;
+											break;
+										}
+									}
+								}
+								
+								if (highlightBrackets)
+									break;
+
+								start.mLine++;
+								start.mColumn = 0;
+							}
+						}
+						// go backwards
+						else {
+							while (start.mLine >= 0) {
+								for (; start.mColumn >= 0; start.mColumn--) {
+									char curChar = mLines[start.mLine][start.mColumn].mChar;
+									if (curChar == search)
+										weight++;
+									else if (isOpeningBracket(search, curChar)) {
+										weight--;
+										if (weight <= 0) {
+											highlightBrackets = true;
+											highlightBracketCoord = start;
+											break;
+										}
+									}
+								}
+
+								if (highlightBrackets)
+									break;
+
+								start.mLine--;
+
+								if (start.mLine >= 0)
+									start.mColumn = mLines[start.mLine].size() - 1;
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// render
 		while (lineNo <= lineMax)
 		{
 			ImVec2 lineStartScreenPos = ImVec2(cursorScreenPos.x, cursorScreenPos.y + lineNo * mCharAdvance.y);
@@ -1646,7 +1747,6 @@ void TextEditor::RenderInternal(const char* aTitle)
 			// Render colorized text
 			auto prevColor = line.empty() ? mPalette[(int)PaletteIndex::Default] : GetGlyphColor(line[0]);
 			ImVec2 bufferOffset;
-
 			for (int i = 0; i < line.size();)
 			{
 				auto& glyph = line[i];
@@ -1662,6 +1762,17 @@ void TextEditor::RenderInternal(const char* aTitle)
 				}
 				prevColor = color;
 
+				// highlight brackets
+				if (highlightBrackets) {
+					if ((lineNo == highlightBracketCoord.mLine && i == highlightBracketCoord.mColumn) ||
+						(lineNo == highlightBracketCursor.mLine && i == highlightBracketCursor.mColumn)) {
+						const ImVec2 p1(textScreenPos.x + bufferOffset.x, textScreenPos.y + bufferOffset.y);
+						const ImVec2 p2(textScreenPos.x + bufferOffset.x + ImGui::GetFont()->GetCharAdvance(mLines[highlightBracketCoord.mLine][highlightBracketCoord.mColumn].mChar), textScreenPos.y + bufferOffset.y + ImGui::GetFontSize());
+						drawList->AddRectFilled(p1, p2, mPalette[(int)PaletteIndex::Selection]);
+					}
+				}
+
+				// tab, space, etc...
 				if (glyph.mChar == '\t')
 				{
 					auto oldX = bufferOffset.x;
@@ -1703,7 +1814,6 @@ void TextEditor::RenderInternal(const char* aTitle)
 				}
 				++columnNo;
 			}
-
 			if (!mLineBuffer.empty())
 			{
 				const ImVec2 newOffset(textScreenPos.x + bufferOffset.x, textScreenPos.y + bufferOffset.y);
