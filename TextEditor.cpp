@@ -51,6 +51,12 @@ bool isOpeningBracket(char close, char actual)
 {
 	return (close == '}' && actual == '{') || (close == ']' && actual == '[') || (close == ')' && actual == '(');
 }
+void printFolds(const std::vector<TextEditor::Coordinates>& coords) {
+
+	for (int b = 0; b < coords.size(); b++)
+		printf("[%d, %d]\n", coords[b].mLine, coords[b].mColumn);
+	printf("\n");
+}
 
 TextEditor::TextEditor()
 	: mLineSpacing(1.0f)
@@ -104,6 +110,7 @@ TextEditor::TextEditor()
 	, mSidebar(true)
 	, mHasSearch(true)
 	, mReplaceIndex(0)
+	, mFoldEnabled(true)
 	, mStartTime(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
 {
 	memset(mFindWord, 0, 256 * sizeof(char));
@@ -283,7 +290,7 @@ TextEditor::Coordinates TextEditor::SanitizeCoordinates(const Coordinates & aVal
 	}
 	else
 	{
-		column = mLines.empty() ? 0 : std::min(column, GetLineMaxColumn(line));
+		column = std::max<int>(0, mLines.empty() ? 0 : std::min(column, GetLineMaxColumn(line)));
 		return Coordinates(line, column);
 	}
 }
@@ -369,8 +376,6 @@ void TextEditor::DeleteRange(const Coordinates& aStart, const Coordinates& aEnd)
 	assert(aEnd >= aStart);
 	assert(!mReadOnly);
 
-	//printf("D(%d.%d)-(%d.%d)\n", aStart.mLine, aStart.mColumn, aEnd.mLine, aEnd.mColumn);
-
 	if (aEnd == aStart)
 		return;
 
@@ -384,18 +389,32 @@ void TextEditor::DeleteRange(const Coordinates& aStart, const Coordinates& aEnd)
 			line.erase(line.begin() + start, line.end());
 		else
 			line.erase(line.begin() + start, line.begin() + end);
+
+		mRemoveFolds(aStart, aEnd);
 	} else {
 		auto& firstLine = mLines[aStart.mLine];
 		auto& lastLine = mLines[aEnd.mLine];
 
 		firstLine.erase(firstLine.begin() + start, firstLine.end());
+
+		int colSizeBefore = GetCharacterColumn(aEnd.mLine, lastLine.size());
 		lastLine.erase(lastLine.begin(), lastLine.begin() + end);
+		int colSizeChange = std::max<int>(0, colSizeBefore - GetCharacterColumn(aEnd.mLine, lastLine.size()));
 
 		if (aStart.mLine < aEnd.mLine)
 			firstLine.insert(firstLine.end(), lastLine.begin(), lastLine.end());
 
-		if (aStart.mLine < aEnd.mLine)
+		if (aStart.mLine < aEnd.mLine) {
 			RemoveLine(aStart.mLine + 1, aEnd.mLine + 1);
+
+			// folds
+			for (int i = 0; i < mFoldBegin.size(); i++)
+				if (mFoldBegin[i].mLine == aStart.mLine)
+					mFoldBegin[i].mColumn = std::max<int>(0, mFoldBegin[i].mColumn - colSizeChange);
+			for (int i = 0; i < mFoldEnd.size(); i++)
+				if (mFoldEnd[i].mLine == aStart.mLine)
+					mFoldEnd[i].mColumn = std::max<int>(0, mFoldEnd[i].mColumn - colSizeChange);
+		}
 	}
 
 	if (mScrollbarMarkers) {
@@ -442,16 +461,26 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 		}
 		else if (*aValue == '\n')
 		{
-			if (cindex < (int)mLines[aWhere.mLine].size() && cindex >= 0)
-			{
-				auto& newLine = InsertLine(aWhere.mLine + 1);
+			if (cindex < (int)mLines[aWhere.mLine].size() && cindex >= 0) {
+				// normal stuff
+				auto& newLine = InsertLine(aWhere.mLine + 1, aWhere.mColumn);
 				auto& line = mLines[aWhere.mLine];
 				newLine.insert(newLine.begin(), line.begin() + cindex, line.end());
 				line.erase(line.begin() + cindex, line.end());
+
+				
+				// folding
+				for (int b = 0; b < mFoldBegin.size(); b++)
+					if (mFoldBegin[b].mLine == aWhere.mLine + 1 && mFoldBegin[b].mColumn >= aWhere.mColumn)
+						mFoldBegin[b].mColumn = std::max<int>(0, mFoldBegin[b].mColumn - aWhere.mColumn);
+				for (int b = 0; b < mFoldEnd.size(); b++)
+					if (mFoldEnd[b].mLine == aWhere.mLine + 1 && mFoldEnd[b].mColumn >= aWhere.mColumn)
+						mFoldEnd[b].mColumn = std::max<int>(0, mFoldEnd[b].mColumn - aWhere.mColumn);
+
 			}
 			else
 			{
-				InsertLine(aWhere.mLine + 1);
+				InsertLine(aWhere.mLine + 1, aWhere.mColumn);
 			}
 			++aWhere.mLine;
 			cindex = 0;
@@ -491,6 +520,16 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 				cindex = tabCount + spaceCount;
 				aWhere.mColumn = actualAutoIndent;
 
+				
+				// folding
+				for (int b = 0; b < mFoldBegin.size(); b++)
+					if (mFoldBegin[b].mLine == aWhere.mLine && mFoldBegin[b].mColumn >= aWhere.mColumn)
+						mFoldBegin[b].mColumn += spaceCount + tabCount * mTabSize;
+				for (int b = 0; b < mFoldEnd.size(); b++)
+					if (mFoldEnd[b].mLine == aWhere.mLine && mFoldEnd[b].mColumn >= aWhere.mColumn)
+						mFoldEnd[b].mColumn += spaceCount + tabCount * mTabSize;
+
+				// insert the spaces/tabs
 				while (spaceCount-- > 0) {
 					mLines[aWhere.mLine].insert(mLines[aWhere.mLine].begin(), Glyph(' ', PaletteIndex::Default));
 					for (int i = 0; i < mSnippetTagStart.size(); i++) {
@@ -513,16 +552,29 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 		}
 		else
 		{
-			if (*aValue == '{')
+			if (*aValue == '{') {
+				mFoldBegin.push_back(aWhere);
 				autoIndent += mTabSize;
-			else if (*aValue == '}')
+			} else if (*aValue == '}') {
+				mFoldEnd.push_back(aWhere);
 				autoIndent = std::max(0, autoIndent - mTabSize);
-
+			}
 			bool isTab = *aValue == '\t';
 			auto& line = mLines[aWhere.mLine];
 			auto d = UTF8CharLength(*aValue);
-			while (d-- > 0 && *aValue != '\0')
+			int foldOffset = 0;
+			while (d-- > 0 && *aValue != '\0') {
+				foldOffset += (*aValue == '\t') ? mTabSize : 1;
 				line.insert(line.begin() + cindex++, Glyph(*aValue++, PaletteIndex::Default));
+			}
+
+			for (int i = 0; i < mFoldBegin.size(); i++)
+				if (mFoldBegin[i].mLine == aWhere.mLine && mFoldBegin[i].mColumn >= aWhere.mColumn)
+					mFoldBegin[i].mColumn += foldOffset;
+			for (int i = 0; i < mFoldEnd.size(); i++)
+				if (mFoldEnd[i].mLine == aWhere.mLine && mFoldEnd[i].mColumn >= aWhere.mColumn)
+					mFoldEnd[i].mColumn += foldOffset;
+
 			aWhere.mColumn += (isTab ? mTabSize : 1);
 		}
 	}
@@ -890,6 +942,10 @@ void TextEditor::RemoveLine(int aStart, int aEnd)
 	mLines.erase(mLines.begin() + aStart, mLines.begin() + aEnd);
 	assert(!mLines.empty());
 
+	// remove folds
+	mRemoveFolds(Coordinates(aStart-1, 0), Coordinates(std::max<int>(aStart-1, aEnd-2), 100000));
+
+	// remove scrollbard markers
 	if (mScrollbarMarkers) {
 		for (int i = 0; i < mChangedLines.size(); i++) {
 			if (mChangedLines[i] > aEnd)
@@ -934,8 +990,11 @@ void TextEditor::RemoveLine(int aIndex)
 
 	mLines.erase(mLines.begin() + aIndex);
 	assert(!mLines.empty());
+	
+	// remove folds
+	mRemoveFolds(Coordinates(aIndex, 0), Coordinates(aIndex, 100000));
 
-
+	// move/remove scrollbar markers
 	if (mScrollbarMarkers) {
 		for (int i = 0; i < mChangedLines.size(); i++) {
 			if (mChangedLines[i] > aIndex)
@@ -953,17 +1012,27 @@ void TextEditor::RemoveLine(int aIndex)
 		OnContentUpdate(this);
 }
 
-TextEditor::Line& TextEditor::InsertLine(int aIndex)
+TextEditor::Line& TextEditor::InsertLine(int aIndex, int column)
 {
 	assert(!mReadOnly);
 
 	auto& result = *mLines.insert(mLines.begin() + aIndex, Line());
 
+	// folding
+	for (int b = 0; b < mFoldBegin.size(); b++) 
+		if (mFoldBegin[b].mLine > aIndex - 1 || (mFoldBegin[b].mLine == aIndex - 1 && mFoldBegin[b].mColumn >= column))
+			mFoldBegin[b].mLine++;
+	for (int b = 0; b < mFoldEnd.size(); b++)
+		if (mFoldEnd[b].mLine > aIndex - 1 || (mFoldEnd[b].mLine == aIndex - 1 && mFoldEnd[b].mColumn >= column))
+			mFoldEnd[b].mLine++;
+
+	// error markers
 	ErrorMarkers etmp;
 	for (auto& i : mErrorMarkers)
 		etmp.insert(ErrorMarkers::value_type(i.first >= aIndex ? i.first + 1 : i.first, i.second));
 	mErrorMarkers = std::move(etmp);
 
+	// breakpoints
 	auto btmp = mBreakpoints;
 	mBreakpoints.clear();
 	for (auto i : btmp)
@@ -1226,7 +1295,7 @@ void TextEditor::HandleKeyboardInputs()
 					undo.mBefore = mState;
 
 					auto oldLine = mLines[mState.mCursorPosition.mLine];
-					auto& line = InsertLine(mState.mCursorPosition.mLine);
+					auto& line = InsertLine(mState.mCursorPosition.mLine, mState.mCursorPosition.mColumn);
 
 					undo.mAdded += '\n';
 					for (auto& glyph : oldLine) {
@@ -1532,7 +1601,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 	if (!mLines.empty())
 	{
 		float spaceSize = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, " ", nullptr, nullptr).x;
-
+		
 		// find bracket pairs to highlight
 		bool highlightBrackets = false;
 		Coordinates highlightBracketCoord = mState.mCursorPosition, highlightBracketCursor = mState.mCursorPosition;
@@ -1615,6 +1684,9 @@ void TextEditor::RenderInternal(const char* aTitle)
 				}
 			}
 		}
+
+		// fold weight of the fold button that was hovered
+		int hoverFoldWeight = 0;
 
 		// render
 		while (lineNo <= lineMax)
@@ -1821,7 +1893,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 				mLineBuffer.clear();
 			}
 
-			// side bar bg
+			// side bar
 			if (mSidebar) {
 				drawList->AddRectFilled(ImVec2(lineStartScreenPos.x + scrollX, lineStartScreenPos.y), ImVec2(lineStartScreenPos.x + scrollX + mTextStart - 5.0f, lineStartScreenPos.y + mCharAdvance.y), ImGui::GetColorU32(ImGuiCol_WindowBg));
 
@@ -1872,6 +1944,106 @@ void TextEditor::RenderInternal(const char* aTitle)
 
 					auto lineNoWidth = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x;
 					drawList->AddText(ImVec2(lineStartScreenPos.x + scrollX + mTextStart - lineNoWidth, lineStartScreenPos.y), mPalette[(int)PaletteIndex::LineNumber], buf);
+				}
+
+				// fold +/- icon
+				if (mFoldEnabled) { // TODO: mFoldEnabled
+					int foldWeight = 0;
+					bool hasFold = false;
+					bool hasFoldEnd = false;
+					float foldBtnSize = spaceSize;
+					float foldStartX = lineStartScreenPos.x + scrollX + mTextStart - spaceSize * 2.0f + 4;
+					float foldStartY = lineStartScreenPos.y + (ImGui::GetFontSize() - foldBtnSize) / 2.0f;
+
+					// calculate current weight + find if here ends or starts another "fold"
+					for (int i = 0; i < mFoldBegin.size(); i++) {
+						if (mFoldBegin[i].mLine == lineNo) {
+							hasFold = true;
+							break;
+						} else if (mFoldBegin[i].mLine < lineNo)
+							foldWeight++;
+					}
+					for (int i = 0; i < mFoldEnd.size(); i++) {
+						if (mFoldEnd[i].mLine == lineNo) {
+							hasFoldEnd = true;
+							break;
+						} else if (mFoldEnd[i].mLine < lineNo)
+							foldWeight--;
+					}
+					bool isHovered = (hoverFoldWeight && foldWeight >= hoverFoldWeight);
+
+					// line
+					if (foldWeight > 0 && !hasFold) {
+						ImVec2 p1(foldStartX + foldBtnSize / 2, lineStartScreenPos.y);
+						ImVec2 p2(p1.x, p1.y + mCharAdvance.y + 1.0f);
+
+						drawList->AddLine(p1, p2, mPalette[(int)PaletteIndex::Default]);
+					}
+
+					// render the +/- box
+					if (hasFold) {
+						ImVec2 fmin(foldStartX, foldStartY + 2);
+						ImVec2 fmax(fmin.x + foldBtnSize, fmin.y + foldBtnSize);
+
+						// line up
+						if (foldWeight > 0) {
+							ImVec2 p1(foldStartX + foldBtnSize / 2, lineStartScreenPos.y);
+							ImVec2 p2(p1.x, fmin.y);
+							drawList->AddLine(p1, p2, mPalette[(int)PaletteIndex::Default]);
+						}
+
+						// fold button
+						foldWeight++;
+						drawList->AddRect(fmin, fmax, mPalette[(int)PaletteIndex::Default]);
+
+						// check if mouse is over this fold button
+						ImVec2 mpos = ImGui::GetMousePos();
+						if (mpos.x >= fmin.x && mpos.x <= fmax.x &&
+							mpos.y >= fmin.y && mpos.y <= fmax.y)
+						{
+							isHovered = true;
+							hoverFoldWeight = foldWeight;
+							ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
+						}
+
+						// unfolded
+						if (!false) { // TODO: !isFolded
+							// minus
+							drawList->AddLine(ImVec2(fmin.x + 3, (fmin.y + fmax.y) / 2.0f), ImVec2(fmax.x - 4, (fmin.y + fmax.y) / 2.0f), mPalette[(int)PaletteIndex::Default]);
+
+							// line down
+							float lineContinueY = (lineStartScreenPos.y + mCharAdvance.y) - fmax.y;
+							ImVec2 p1(foldStartX + foldBtnSize / 2, fmax.y);
+							ImVec2 p2(p1.x, fmax.y + lineContinueY);
+							drawList->AddLine(p1, p2, mPalette[(int)PaletteIndex::Default]);
+						}
+						// folded
+						else {
+						}
+					}
+					// horizontal line
+					else if (hasFoldEnd) {
+						foldWeight--;
+						if (hoverFoldWeight && foldWeight < hoverFoldWeight)
+							hoverFoldWeight = 0;
+
+						ImVec2 p1(foldStartX + foldBtnSize / 2, lineStartScreenPos.y + mCharAdvance.y - 1.0f);
+						ImVec2 p2(p1.x + mCharAdvance.x / 2.0f, p1.y);
+						drawList->AddLine(p1, p2, mPalette[(int)PaletteIndex::Default]);
+					}
+
+					// hover background
+					if (isHovered) {
+						// sidebar bg
+						ImVec2 pmin(foldStartX-4, lineStartScreenPos.y);
+						ImVec2 pmax(pmin.x + foldBtnSize + 8, pmin.y + mCharAdvance.y);
+						drawList->AddRectFilled(pmin, pmax, 0x40000000 | (0x00FFFFFF & mPalette[(int)PaletteIndex::Default]));
+						
+						// line bg
+						pmin.x = pmax.x;
+						pmax.x = lineStartScreenPos.x + scrollX + mTextStart + contentSize.x;
+						drawList->AddRectFilled(pmin, pmax, 0x20000000 | (0x00FFFFFF & mPalette[(int)PaletteIndex::Default]));
+					}
 				}
 			}
 
@@ -2183,6 +2355,67 @@ std::string TextEditor::mBuildVariableType(const ed::SPIRVParser::Variable& var,
 	}
 
 	return "";
+}
+
+void TextEditor::mRemoveFolds(const Coordinates& aStart, const Coordinates& aEnd)
+{
+	bool deleteFullyLastLine = false;
+	if (aEnd.mLine >= mLines.size() || aEnd.mColumn >= 100000)
+		deleteFullyLastLine = true;
+
+	for (int i = 0; i < mFoldBegin.size(); i++) {
+		if (mFoldBegin[i].mLine >= aStart.mLine && mFoldBegin[i].mLine <= aEnd.mLine) {
+			if (mFoldBegin[i].mLine == aStart.mLine && aStart.mLine != aEnd.mLine) {
+				if (mFoldBegin[i].mColumn >= aStart.mColumn) {
+					mFoldBegin.erase(mFoldBegin.begin() + i);
+					i--;
+				}
+			} else if (mFoldBegin[i].mLine == aEnd.mLine) {
+				if (mFoldBegin[i].mColumn < aEnd.mColumn) {
+					if (aEnd.mLine != aStart.mLine || mFoldBegin[i].mColumn >= aStart.mColumn) {
+						mFoldBegin.erase(mFoldBegin.begin() + i);
+						i--;
+					}
+				} else {
+					if (aEnd.mLine == aStart.mLine)
+						mFoldBegin[i].mColumn = std::max<int>(0, mFoldBegin[i].mColumn - (aEnd.mColumn - aStart.mColumn));
+					else
+						mFoldBegin[i].mLine -= (aEnd.mLine - aStart.mLine);
+				}
+			} else {
+				mFoldBegin.erase(mFoldBegin.begin() + i);
+				i--;
+			}
+		}
+		else if (mFoldBegin[i].mLine > aEnd.mLine)
+			mFoldBegin[i].mLine -= (aEnd.mLine - aStart.mLine) + deleteFullyLastLine;
+	}
+	for (int i = 0; i < mFoldEnd.size(); i++) {
+		if (mFoldEnd[i].mLine >= aStart.mLine && mFoldEnd[i].mLine <= aEnd.mLine) {
+			if (mFoldEnd[i].mLine == aStart.mLine && aStart.mLine != aEnd.mLine) {
+				if (mFoldEnd[i].mColumn >= aStart.mColumn) {
+					mFoldEnd.erase(mFoldEnd.begin() + i);
+					i--;
+				}
+			} else if (mFoldEnd[i].mLine == aEnd.mLine) {
+				if (mFoldEnd[i].mColumn < aEnd.mColumn) {
+					if (aEnd.mLine != aStart.mLine || mFoldEnd[i].mColumn >= aStart.mColumn) {
+						mFoldEnd.erase(mFoldEnd.begin() + i);
+						i--;
+					}
+				} else {
+					if (aEnd.mLine == aStart.mLine)
+						mFoldEnd[i].mColumn = std::max<int>(0, mFoldEnd[i].mColumn - (aEnd.mColumn - aStart.mColumn));
+					else
+						mFoldEnd[i].mLine -= (aEnd.mLine - aStart.mLine);
+				}
+			} else {
+				mFoldEnd.erase(mFoldEnd.begin() + i);
+				i--;
+			}
+		} else if (mFoldEnd[i].mLine > aEnd.mLine)
+			mFoldEnd[i].mLine -= (aEnd.mLine - aStart.mLine) + deleteFullyLastLine;
+	}
 }
 
 std::string TextEditor::mAutcompleteParse(const std::string& str, const Coordinates& start)
@@ -3018,6 +3251,9 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 void TextEditor::SetText(const std::string & aText)
 {
 	mLines.clear();
+	mFoldBegin.clear();
+	mFoldEnd.clear();
+
 	mLines.emplace_back(Line());
 	for (auto chr : aText)
 	{
@@ -3025,8 +3261,14 @@ void TextEditor::SetText(const std::string & aText)
 			// ignore the carriage return character
 		} else if (chr == '\n')
 			mLines.emplace_back(Line());
-		else
+		else {
+			if (chr == '{')
+				mFoldBegin.push_back(Coordinates(mLines.size() - 1, mLines.back().size()));
+			else if (chr == '}')
+				mFoldEnd.push_back(Coordinates(mLines.size() - 1, mLines.back().size()));
+
 			mLines.back().emplace_back(Glyph(chr, PaletteIndex::Default));
+		}
 	}
 
 	
@@ -3042,6 +3284,8 @@ void TextEditor::SetText(const std::string & aText)
 void TextEditor::SetTextLines(const std::vector<std::string> & aLines)
 {
 	mLines.clear();
+	mFoldBegin.clear();
+	mFoldEnd.clear();
 
 	if (aLines.empty())
 	{
@@ -3056,8 +3300,14 @@ void TextEditor::SetTextLines(const std::vector<std::string> & aLines)
 			const std::string & aLine = aLines[i];
 
 			mLines[i].reserve(aLine.size());
-			for (size_t j = 0; j < aLine.size(); ++j)
+			for (size_t j = 0; j < aLine.size(); ++j) {
+				if (aLine[j] == '{')
+					mFoldBegin.push_back(Coordinates(i, j));
+				else if (aLine[j] == '}')
+					mFoldEnd.push_back(Coordinates(i, j));
+
 				mLines[i].emplace_back(Glyph(aLine[j], PaletteIndex::Default));
+			}
 		}
 	}
 
@@ -3189,20 +3439,36 @@ void TextEditor::EnterCharacter(ImWchar aChar, bool aShift)
 
 	if (aChar == '\n')
 	{
-		InsertLine(coord.mLine + 1);
+		InsertLine(coord.mLine + 1, coord.mColumn);
 		auto& line = mLines[coord.mLine];
 		auto& newLine = mLines[coord.mLine + 1];
+		auto cindex = GetCharacterIndex(coord);
+
+		int foldOffset = 0;
+		for (int i = 0; i < cindex; i++)
+			foldOffset -= 1 + (line[i].mChar == '\t') * 3;
 
 		if (mLanguageDefinition.mAutoIndentation && mSmartIndent)
-			for (size_t it = 0; it < line.size() && isascii(line[it].mChar) && isblank(line[it].mChar); ++it)
+			for (size_t it = 0; it < line.size() && isascii(line[it].mChar) && isblank(line[it].mChar); ++it) {
 				newLine.push_back(line[it]);
+				foldOffset += 1 + (line[it].mChar == '\t') * 3;
+			}
 
 		const size_t whitespaceSize = newLine.size();
-		auto cindex = GetCharacterIndex(coord);
 		newLine.insert(newLine.end(), line.begin() + cindex, line.end());
 		line.erase(line.begin() + cindex, line.begin() + line.size());
 		SetCursorPosition(Coordinates(coord.mLine + 1, GetCharacterColumn(coord.mLine + 1, (int)whitespaceSize)));
 		u.mAdded = (char)aChar;
+
+		// shift folds
+		for (int b = 0; b < mFoldBegin.size(); b++)
+			if (mFoldBegin[b].mLine == coord.mLine + 1)
+				mFoldBegin[b].mColumn = std::max<int>(0, (mFoldBegin[b].mColumn + foldOffset) + (mFoldBegin[b].mColumn != coord.mColumn));
+		printFolds(mFoldEnd);
+		for (int b = 0; b < mFoldEnd.size(); b++)
+			if (mFoldEnd[b].mLine == coord.mLine + 1)
+				mFoldEnd[b].mColumn = std::max<int>(0, (mFoldEnd[b].mColumn + foldOffset) + (mFoldEnd[b].mColumn != coord.mColumn));
+		printFolds(mFoldEnd);
 	}
 	else
 	{
@@ -3230,12 +3496,49 @@ void TextEditor::EnterCharacter(ImWchar aChar, bool aShift)
 				while (d-- > 0 && cindex < (int)line.size())
 				{
 					u.mRemoved += line[cindex].mChar;
+
+					// remove fold information if needed
+					if (line[cindex].mChar == '{')
+						for (int fl = 0; fl < mFoldBegin.size(); fl++)
+							if (mFoldBegin[fl].mLine == coord.mLine && mFoldBegin[fl].mColumn == coord.mColumn) {
+								mFoldBegin.erase(mFoldBegin.begin() + fl);
+								break;
+							}
+					if (line[cindex].mChar == '}')
+						for (int fl = 0; fl < mFoldEnd.size(); fl++)
+							if (mFoldEnd[fl].mLine == coord.mLine && mFoldEnd[fl].mColumn == coord.mColumn) {
+								mFoldEnd.erase(mFoldEnd.begin() + fl);
+								break;
+							}
+
 					line.erase(line.begin() + cindex);
 				}
 			}
 
-			for (auto p = buf; *p != '\0'; p++, ++cindex)
+			// move the folds if necessary
+			int foldOffset = 0;
+			if (buf[0] == '\t')
+				foldOffset = mTabSize - (coord.mColumn - (coord.mColumn / mTabSize) * mTabSize);
+			else
+				foldOffset = strlen(buf);
+			for (int b = 0; b < mFoldBegin.size(); b++) 
+				if (mFoldBegin[b].mLine == coord.mLine && mFoldBegin[b].mColumn >= cindex)
+					mFoldBegin[b].mColumn += foldOffset;
+			printFolds(mFoldEnd);
+			for (int b = 0; b < mFoldEnd.size(); b++)
+				if (mFoldEnd[b].mLine == coord.mLine && mFoldEnd[b].mColumn >= cindex)
+					mFoldEnd[b].mColumn += foldOffset;
+			printFolds(mFoldEnd);
+
+			// insert text
+			for (auto p = buf; *p != '\0'; p++, ++cindex) {
+				if (*p == '{')
+					mFoldBegin.push_back(Coordinates(coord.mLine, cindex));
+				else if (*p == '}')
+					mFoldEnd.push_back(Coordinates(coord.mLine, cindex));
+
 				line.insert(line.begin() + cindex, Glyph(*p, PaletteIndex::Default));
+			}
 			u.mAdded = buf;
 
 			SetCursorPosition(Coordinates(coord.mLine, GetCharacterColumn(coord.mLine, cindex)));
@@ -3305,7 +3608,6 @@ void TextEditor::EnterCharacter(ImWchar aChar, bool aShift)
 				mOpenFunctionDeclarationTooltip(obj, curPos);
 		}
 	}
-
 
 	// auto brace completion
 	if (mCompleteBraces) {
@@ -3750,8 +4052,22 @@ void TextEditor::Delete()
 			u.mRemovedStart = u.mRemovedEnd = GetActualCursorCoordinates();
 			Advance(u.mRemovedEnd);
 
+			// move folds
+			for (int i = 0; i < mFoldBegin.size(); i++)
+				if (mFoldBegin[i].mLine == pos.mLine + 1) {
+					mFoldBegin[i].mLine = std::max<int>(0, mFoldBegin[i].mLine - 1);
+					mFoldBegin[i].mColumn += GetCharacterColumn(pos.mLine, line.size());
+				}
+			for (int i = 0; i < mFoldEnd.size(); i++)
+				if (mFoldEnd[i].mLine == pos.mLine + 1) {
+					mFoldEnd[i].mLine = std::max<int>(0, mFoldEnd[i].mLine - 1);
+					mFoldEnd[i].mColumn += GetCharacterColumn(pos.mLine, line.size());
+				}
+
+
 			auto& nextLine = mLines[pos.mLine + 1];
 			line.insert(line.end(), nextLine.begin(), nextLine.end());
+
 			RemoveLine(pos.mLine + 1);
 		}
 		else
@@ -3760,6 +4076,8 @@ void TextEditor::Delete()
 			u.mRemovedStart = u.mRemovedEnd = GetActualCursorCoordinates();
 			u.mRemovedEnd.mColumn++;
 			u.mRemoved = GetText(u.mRemovedStart, u.mRemovedEnd);
+
+			mRemoveFolds(u.mRemovedStart, u.mRemovedEnd);
 
 			auto d = UTF8CharLength(line[cindex].mChar);
 			while (d-- > 0 && cindex < (int)line.size())
@@ -3826,17 +4144,30 @@ void TextEditor::Backspace()
 			auto prevSize = GetLineMaxColumn(mState.mCursorPosition.mLine - 1);
 			prevLine.insert(prevLine.end(), line.begin(), line.end());
 
+			// error markers
 			ErrorMarkers etmp;
 			for (auto& i : mErrorMarkers)
 				etmp.insert(ErrorMarkers::value_type(i.first - 1 == mState.mCursorPosition.mLine ? i.first - 1 : i.first, i.second));
 			mErrorMarkers = std::move(etmp);
 
+			// shift folds
+			for (int b = 0; b < mFoldBegin.size(); b++)
+				if (mFoldBegin[b].mLine == mState.mCursorPosition.mLine) {
+					mFoldBegin[b].mLine = std::max<int>(0, mFoldBegin[b].mLine - 1);
+					mFoldBegin[b].mColumn = mFoldBegin[b].mColumn + prevSize;
+				}
+			printFolds(mFoldEnd);
+			for (int b = 0; b < mFoldEnd.size(); b++)
+				if (mFoldEnd[b].mLine == mState.mCursorPosition.mLine) {
+					mFoldEnd[b].mLine = std::max<int>(0, mFoldEnd[b].mLine - 1);
+					mFoldEnd[b].mColumn = mFoldEnd[b].mColumn + prevSize;
+				}
+			printFolds(mFoldEnd);
+
 			RemoveLine(mState.mCursorPosition.mLine);
 			--mState.mCursorPosition.mLine;
 			mState.mCursorPosition.mColumn = prevSize;
-		}
-		else
-		{
+		} else {
 			auto& line = mLines[mState.mCursorPosition.mLine];
 			auto cindex = GetCharacterIndex(pos) - 1;
 			auto cend = cindex + 1;
@@ -3853,24 +4184,36 @@ void TextEditor::Backspace()
 			}
 
 			if (mCompleteBraces && actualLoc > 0 && actualLoc < line.size()) {
-				if ((line[actualLoc - 1].mChar == '(' && line[actualLoc].mChar == ')') ||
-					(line[actualLoc - 1].mChar == '{' && line[actualLoc].mChar == '}') ||
-					(line[actualLoc - 1].mChar == '[' && line[actualLoc].mChar == ']'))
+				if ((line[actualLoc - 1].mChar == '(' && line[actualLoc].mChar == ')') || (line[actualLoc - 1].mChar == '{' && line[actualLoc].mChar == '}') || (line[actualLoc - 1].mChar == '[' && line[actualLoc].mChar == ']'))
 					Delete();
 			}
 
 			u.mRemovedStart = u.mRemovedEnd = GetActualCursorCoordinates();
 
-			while (cindex < line.size() && cend-- > cindex)
-			{
+			while (cindex < line.size() && cend-- > cindex) {
 				uint8_t chVal = line[cindex].mChar;
 
+				int remColumn = 0;
+				for (int i = 0; i < cindex && i < line.size(); i++) {
+					if (line[i].mChar == '\t') {
+						int tabSize = remColumn - (remColumn / mTabSize) * mTabSize;
+						remColumn += mTabSize - tabSize;
+					} else
+						remColumn++;
+				}
+				int remSize = mState.mCursorPosition.mColumn - remColumn;
+
 				u.mRemoved += line[cindex].mChar;
+				u.mRemovedStart.mColumn -= remSize;
+
 				line.erase(line.begin() + cindex);
 
-				u.mRemovedStart.mColumn -= (chVal == '\t') ? mTabSize : 1;
-				mState.mCursorPosition.mColumn -= (chVal == '\t') ? mTabSize : 1;
+				mState.mCursorPosition.mColumn -= remSize;
 			}
+		
+			printFolds(mFoldEnd);
+			mRemoveFolds(u.mRemovedStart, u.mRemovedEnd);
+			printFolds(mFoldEnd);
 		}
 
 		if (mScrollbarMarkers) {

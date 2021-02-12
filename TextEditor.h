@@ -417,6 +417,7 @@ public:
 	inline void SetSidebarVisible(bool s) { mSidebar = s; }
 	inline void SetSearchEnabled(bool s) { mHasSearch = s; }
 	inline void SetHiglightBrackets(bool s) { mHighlightBrackets = s; }
+	inline void SetFoldEnabled(bool s) { mFoldEnabled = s; }
 
 	inline void SetUIScale(float scale) { mUIScale = scale; }
 	inline void SetUIFontSize(float size) { mUIFontSize = size; }
@@ -573,7 +574,7 @@ private:
 	bool IsOnWordBoundary(const Coordinates& aAt) const;
 	void RemoveLine(int aStart, int aEnd);
 	void RemoveLine(int aIndex);
-	Line& InsertLine(int aIndex);
+	Line& InsertLine(int aIndex, int column);
 	void EnterCharacter(ImWchar aChar, bool aShift);
 	void Backspace();
 	void DeleteSelection();
@@ -623,6 +624,11 @@ private:
 	bool mFindFocused, mReplaceFocused;
 	bool mReplaceOpened;
 	char mReplaceWord[256];
+
+	bool mFoldEnabled;
+	std::vector<Coordinates> mFoldBegin, mFoldEnd;
+	void mRemoveFolds(const Coordinates& start, const Coordinates& end);
+	uint64_t mFoldLastIteration;
 
 	std::vector<std::string> mACEntrySearch;
 	std::vector<std::pair<std::string, std::string>> mACEntries;
