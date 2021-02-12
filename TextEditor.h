@@ -627,8 +627,12 @@ private:
 
 	bool mFoldEnabled;
 	std::vector<Coordinates> mFoldBegin, mFoldEnd;
+	std::vector<int> mFoldConnection;
+	std::vector<bool> mFold;
+	bool mFoldSorted;
 	void mRemoveFolds(const Coordinates& start, const Coordinates& end);
 	uint64_t mFoldLastIteration;
+	float mLastScroll;
 
 	std::vector<std::string> mACEntrySearch;
 	std::vector<std::pair<std::string, std::string>> mACEntries;

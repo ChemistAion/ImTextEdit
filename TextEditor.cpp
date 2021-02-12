@@ -111,6 +111,9 @@ TextEditor::TextEditor()
 	, mHasSearch(true)
 	, mReplaceIndex(0)
 	, mFoldEnabled(true)
+	, mFoldLastIteration(0)
+	, mFoldSorted(false)
+	, mLastScroll(0.0f)
 	, mStartTime(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
 {
 	memset(mFindWord, 0, 256 * sizeof(char));
@@ -553,11 +556,15 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 		else
 		{
 			if (*aValue == '{') {
-				mFoldBegin.push_back(aWhere);
 				autoIndent += mTabSize;
+
+				mFoldBegin.push_back(aWhere);
+				mFoldSorted = false;
 			} else if (*aValue == '}') {
-				mFoldEnd.push_back(aWhere);
 				autoIndent = std::max(0, autoIndent - mTabSize);
+
+				mFoldEnd.push_back(aWhere);
+				mFoldSorted = false;
 			}
 			bool isTab = *aValue == '\t';
 			auto& line = mLines[aWhere.mLine];
@@ -619,8 +626,32 @@ TextEditor::Coordinates TextEditor::ScreenPosToCoordinates(const ImVec2& aPositi
 	ImVec2 local(aPosition.x - origin.x, aPosition.y - origin.y);
 
 	int lineNo = std::max(0, (int)floor(local.y / mCharAdvance.y));
-
 	int columnCoord = 0;
+
+	// check for folds
+	if (mFoldEnabled) {
+		int foldOffset = 0;
+		auto foldLineStart = (int)floor(mLastScroll / mCharAdvance.y);
+		auto foldLineEnd = std::min<int>((int)mLines.size() - 1, foldLineStart + (lineNo - foldLineStart));
+		while (foldLineStart <= foldLineEnd) {
+			// check if line is folded
+			for (int i = 0; i < mFoldBegin.size(); i++) {
+				if (mFoldBegin[i].mLine == foldLineStart) {
+					if (i < mFold.size() && mFold[i]) {
+						int foldCon = mFoldConnection[i];
+						if (foldCon != -1 && foldCon < mFoldEnd.size()) {
+							int diff = mFoldEnd[foldCon].mLine - mFoldBegin[i].mLine;
+							foldOffset += diff;
+							foldLineEnd = std::min<int>((int)mLines.size() - 1, foldLineEnd + diff);
+						}
+						break;
+					}
+				}
+			}
+			foldLineStart++;
+		}
+		lineNo += foldOffset;
+	}
 
 	if (lineNo >= 0 && lineNo < (int)mLines.size())
 	{
@@ -670,9 +701,33 @@ TextEditor::Coordinates TextEditor::MousePosToCoordinates(const ImVec2& aPositio
 	ImVec2 local(aPosition.x - origin.x, aPosition.y - origin.y);
 
 	int lineNo = std::max(0, (int)floor(local.y / mCharAdvance.y));
-
 	int columnCoord = 0;
 	int modifier = 0;
+
+	// check for folds
+	if (mFoldEnabled) {
+		int foldOffset = 0;
+		auto foldLineStart = (int)floor(mLastScroll / mCharAdvance.y);
+		auto foldLineEnd = std::min<int>((int)mLines.size() - 1, foldLineStart + (lineNo - foldLineStart));
+		while (foldLineStart <= foldLineEnd) {
+			// check if line is folded
+			for (int i = 0; i < mFoldBegin.size(); i++) {
+				if (mFoldBegin[i].mLine == foldLineStart) {
+					if (i < mFold.size() && mFold[i]) {
+						int foldCon = mFoldConnection[i];
+						if (foldCon != -1 && foldCon < mFoldEnd.size()) {
+							int diff = mFoldEnd[foldCon].mLine - mFoldBegin[i].mLine;
+							foldOffset += diff;
+							foldLineEnd = std::min<int>((int)mLines.size() - 1, foldLineEnd + diff);
+						}
+						break;
+					}
+				}
+			}
+			foldLineStart++;
+		}
+		lineNo += foldOffset;
+	}
 
 	if (lineNo >= 0 && lineNo < (int)mLines.size()) {
 		auto& line = mLines.at(lineNo);
@@ -1470,7 +1525,8 @@ void TextEditor::HandleMouseInputs()
 					if (HasBreakpoint(lineInfo.mLine))
 						RemoveBreakpoint(lineInfo.mLine);
 					else AddBreakpoint(lineInfo.mLine);
-				} else {
+				}
+				else {
 					mACOpened = false;
 					mACObject = "";
 
@@ -1586,18 +1642,19 @@ void TextEditor::RenderInternal(const char* aTitle)
 
 	ImVec2 cursorScreenPos = mUICursorPos = ImGui::GetCursorScreenPos();
 	auto scrollX = ImGui::GetScrollX();
-	auto scrollY = ImGui::GetScrollY();
+	auto scrollY = mLastScroll = ImGui::GetScrollY();
 
+	int pageSize = (int)floor((scrollY + contentSize.y) / mCharAdvance.y);
 	auto lineNo = (int)floor(scrollY / mCharAdvance.y);
 	auto globalLineMax = (int)mLines.size();
-	auto lineMax = std::max<int>(0, std::min<int>((int)mLines.size() - 1, lineNo + (int)floor((scrollY + contentSize.y) / mCharAdvance.y)));
+	auto lineMax = std::max<int>(0, std::min<int>((int)mLines.size() - 1, lineNo + pageSize));
 
 	// Deduce mTextStart by evaluating mLines size (global lineMax) plus two spaces as text width
 	char buf[16];
 	snprintf(buf, 16, " %3d ", globalLineMax);
 	mTextStart = (ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x + mLeftMargin) * mSidebar;
 
-	
+	GetPageSize();
 	if (!mLines.empty())
 	{
 		float spaceSize = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, " ", nullptr, nullptr).x;
@@ -1685,34 +1742,86 @@ void TextEditor::RenderInternal(const char* aTitle)
 			}
 		}
 
-		// fold weight of the fold button that was hovered
+		// fold info
 		int hoverFoldWeight = 0;
+		int linesFolded = 0;
+		uint64_t curTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+		if (mFoldEnabled && curTime - mFoldLastIteration > 3000) {
+			// sort if needed
+			if (!mFoldSorted) {
+				std::sort(mFoldBegin.begin(), mFoldBegin.end());
+				std::sort(mFoldEnd.begin(), mFoldEnd.end());
+				mFoldSorted = true;
+			}
+
+			// resize if needed
+			if (mFold.size() != mFoldBegin.size()) {
+				mFold.resize(mFoldBegin.size(), false);
+				mFoldConnection.resize(mFoldBegin.size(), -1);
+			}
+
+			// reconnect every fold BEGIN with END (TODO: any better way to do this?)
+			std::vector<bool> foldUsed(mFoldEnd.size(), false);
+			for (int i = mFoldBegin.size() - 1; i >= 0; i--) {
+				int j = mFoldEnd.size() - 1;
+				int lastUnused = j;
+				for (; j >= 0; j--) {
+					if (mFoldEnd[j] < mFoldBegin[i])
+						break;
+					if (!foldUsed[j])
+						lastUnused = j;
+				}
+
+				if (lastUnused < mFoldEnd.size()) {
+					foldUsed[lastUnused] = true;
+					mFoldConnection[i] = lastUnused;
+				}
+			}
+
+			mFoldLastIteration = curTime;
+		}
 
 		// render
 		while (lineNo <= lineMax)
 		{
-			ImVec2 lineStartScreenPos = ImVec2(cursorScreenPos.x, cursorScreenPos.y + lineNo * mCharAdvance.y);
+			ImVec2 lineStartScreenPos = ImVec2(cursorScreenPos.x, cursorScreenPos.y + (lineNo - linesFolded) * mCharAdvance.y);
 			ImVec2 textScreenPos = ImVec2(lineStartScreenPos.x + mTextStart, lineStartScreenPos.y);
 
-			auto& line = mLines[lineNo];
+			auto* line = &mLines[lineNo];
 			longest = std::max(mTextStart + TextDistanceToLineStart(Coordinates(lineNo, GetLineMaxColumn(lineNo))), longest);
-			auto columnNo = 0;
 			Coordinates lineStartCoord(lineNo, 0);
 			Coordinates lineEndCoord(lineNo, GetLineMaxColumn(lineNo));
+
+			// check if line is folded
+			bool lineFolded = false;
+			int lineNew = 0;
+			Coordinates lineFoldStart, lineFoldEnd;
+			if (mFoldEnabled) {
+				for (int i = 0; i < mFoldBegin.size(); i++) {
+					if (mFoldBegin[i].mLine == lineNo) {
+						if (i < mFold.size()) {
+							lineFolded = mFold[i];
+							lineFoldStart = mFoldBegin[i];
+							
+							int foldCon = mFoldConnection[i];
+							if (lineFolded && foldCon != -1 && foldCon < mFoldEnd.size())
+								lineFoldEnd = mFoldEnd[foldCon];
+						}
+						break;
+					}
+				}
+			}
 
 			// Draw selection for the current line
 			float sstart = -1.0f;
 			float ssend = -1.0f;
-
 			assert(mState.mSelectionStart <= mState.mSelectionEnd);
 			if (mState.mSelectionStart <= lineEndCoord)
 				sstart = mState.mSelectionStart > lineStartCoord ? TextDistanceToLineStart(mState.mSelectionStart) : 0.0f;
 			if (mState.mSelectionEnd > lineStartCoord)
 				ssend = TextDistanceToLineStart(mState.mSelectionEnd < lineEndCoord ? mState.mSelectionEnd : lineEndCoord);
-
 			if (mState.mSelectionEnd.mLine > lineNo)
 				ssend += mCharAdvance.x;
-
 			if (sstart != -1 && ssend != -1 && sstart < ssend)
 			{
 				ImVec2 vstart(lineStartScreenPos.x + mTextStart + sstart, lineStartScreenPos.y);
@@ -1720,6 +1829,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 				drawList->AddRectFilled(vstart, vend, mPalette[(int)PaletteIndex::Selection]);
 			}
 
+			// draw snippet stuff
 			if (mIsSnippet) {
 				unsigned int oldColor = mPalette[(int)PaletteIndex::Selection];
 				unsigned int alpha = (oldColor & 0xFF000000) >> 25;
@@ -1775,17 +1885,16 @@ void TextEditor::RenderInternal(const char* aTitle)
 				// Render the cursor
 				if (focused)
 				{
-					auto timeEnd = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-					auto elapsed = timeEnd - mStartTime;
+					auto elapsed = curTime - mStartTime;
 					if (elapsed > 400)
 					{
 						float width = 1.0f;
 						auto cindex = GetCharacterIndex(mState.mCursorPosition);
 						float cx = TextDistanceToLineStart(mState.mCursorPosition);
 
-						if (mOverwrite && cindex < (int)line.size())
+						if (mOverwrite && cindex < (int)line->size())
 						{
-							auto c = line[cindex].mChar;
+							auto c = (*line)[cindex].mChar;
 							if (c == '\t')
 							{
 								auto x = (1.0f + std::floor((1.0f + cx) / (float(mTabSize) * spaceSize))) * (float(mTabSize) * spaceSize);
@@ -1794,7 +1903,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 							else
 							{
 								char buf2[2];
-								buf2[0] = line[cindex].mChar;
+								buf2[0] = (*line)[cindex].mChar;
 								buf2[1] = '\0';
 								width = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf2).x;
 							}
@@ -1803,7 +1912,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 						ImVec2 cend(textScreenPos.x + cx + width, lineStartScreenPos.y + mCharAdvance.y);
 						drawList->AddRectFilled(cstart, cend, mPalette[(int)PaletteIndex::Cursor]);
 						if (elapsed > 800)
-							mStartTime = timeEnd;
+							mStartTime = curTime;
 					}
 				}
 			}
@@ -1816,12 +1925,12 @@ void TextEditor::RenderInternal(const char* aTitle)
 				}
 			}
 
-			// Render colorized text
-			auto prevColor = line.empty() ? mPalette[(int)PaletteIndex::Default] : GetGlyphColor(line[0]);
+			// text
+			auto prevColor = line->empty() ? mPalette[(int)PaletteIndex::Default] : GetGlyphColor((*line)[0]);
 			ImVec2 bufferOffset;
-			for (int i = 0; i < line.size();)
+			for (int i = 0; i < line->size();)
 			{
-				auto& glyph = line[i];
+				auto& glyph = (*line)[i];
 				auto color = GetGlyphColor(glyph);
 
 				if ((color != prevColor || glyph.mChar == '\t' || glyph.mChar == ' ') && !mLineBuffer.empty())
@@ -1882,9 +1991,34 @@ void TextEditor::RenderInternal(const char* aTitle)
 				{
 					auto l = UTF8CharLength(glyph.mChar);
 					while (l-- > 0)
-						mLineBuffer.push_back(line[i++].mChar);
+						mLineBuffer.push_back((*line)[i++].mChar);
 				}
-				++columnNo;
+
+				// skip if folded
+				if (lineFolded && lineFoldStart.mColumn == i - 1) {
+					i = lineFoldEnd.mColumn;
+					lineNew = lineFoldEnd.mLine;
+					line = &mLines[lineNew];
+					lineFolded = false;
+					if (!mLineBuffer.empty()) {
+						// render the actual text
+						const ImVec2 newOffset(textScreenPos.x + bufferOffset.x, textScreenPos.y + bufferOffset.y);
+						auto textSize = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, mLineBuffer.c_str(), nullptr, nullptr);
+						drawList->AddText(newOffset, prevColor, mLineBuffer.c_str());
+						mLineBuffer.clear();
+						bufferOffset.x += textSize.x;
+
+						// render the [...] when folded
+						const ImVec2 offsetFoldBox(textScreenPos.x + bufferOffset.x, textScreenPos.y + bufferOffset.y);
+						drawList->AddText(offsetFoldBox, mPalette[(int)PaletteIndex::Default], " ... ");
+						textSize = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, " ... ", nullptr, nullptr);
+						drawList->AddRect(ImVec2(textScreenPos.x + bufferOffset.x + mCharAdvance.x / 2.0f, textScreenPos.y + bufferOffset.y),
+										  ImVec2(textScreenPos.x + bufferOffset.x + textSize.x - mCharAdvance.x / 2.0f, textScreenPos.y + bufferOffset.y + mCharAdvance.y),
+										  mPalette[(int)PaletteIndex::Default]);
+						bufferOffset.x += textSize.x;
+					}
+				}
+
 			}
 			if (!mLineBuffer.empty())
 			{
@@ -1948,9 +2082,11 @@ void TextEditor::RenderInternal(const char* aTitle)
 
 				// fold +/- icon
 				if (mFoldEnabled) { // TODO: mFoldEnabled
+					int foldID = 0;
 					int foldWeight = 0;
 					bool hasFold = false;
 					bool hasFoldEnd = false;
+					bool isFolded = false;
 					float foldBtnSize = spaceSize;
 					float foldStartX = lineStartScreenPos.x + scrollX + mTextStart - spaceSize * 2.0f + 4;
 					float foldStartY = lineStartScreenPos.y + (ImGui::GetFontSize() - foldBtnSize) / 2.0f;
@@ -1959,6 +2095,9 @@ void TextEditor::RenderInternal(const char* aTitle)
 					for (int i = 0; i < mFoldBegin.size(); i++) {
 						if (mFoldBegin[i].mLine == lineNo) {
 							hasFold = true;
+							foldID = i;
+							if (i < mFold.size())
+								isFolded = mFold[i];
 							break;
 						} else if (mFoldBegin[i].mLine < lineNo)
 							foldWeight++;
@@ -2004,21 +2143,28 @@ void TextEditor::RenderInternal(const char* aTitle)
 							isHovered = true;
 							hoverFoldWeight = foldWeight;
 							ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
+
+							if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+								if (foldID < mFold.size()) {
+									isFolded = !isFolded;
+									mFold[foldID] = isFolded;
+								}
+							}
 						}
 
-						// unfolded
-						if (!false) { // TODO: !isFolded
-							// minus
-							drawList->AddLine(ImVec2(fmin.x + 3, (fmin.y + fmax.y) / 2.0f), ImVec2(fmax.x - 4, (fmin.y + fmax.y) / 2.0f), mPalette[(int)PaletteIndex::Default]);
+						// minus
+						drawList->AddLine(ImVec2(fmin.x + 3, (fmin.y + fmax.y) / 2.0f), ImVec2(fmax.x - 4, (fmin.y + fmax.y) / 2.0f), mPalette[(int)PaletteIndex::Default]);
 
-							// line down
+						// plus
+						if (isFolded)
+							drawList->AddLine(ImVec2((fmin.x + fmax.x) / 2.0f, fmin.y + 3), ImVec2((fmin.x + fmax.x) / 2.0f, fmax.y - 4), mPalette[(int)PaletteIndex::Default]);
+
+						// line down
+						if (!isFolded || foldWeight > 1) {
 							float lineContinueY = (lineStartScreenPos.y + mCharAdvance.y) - fmax.y;
 							ImVec2 p1(foldStartX + foldBtnSize / 2, fmax.y);
 							ImVec2 p2(p1.x, fmax.y + lineContinueY);
 							drawList->AddLine(p1, p2, mPalette[(int)PaletteIndex::Default]);
-						}
-						// folded
-						else {
 						}
 					}
 					// horizontal line
@@ -2045,6 +2191,12 @@ void TextEditor::RenderInternal(const char* aTitle)
 						drawList->AddRectFilled(pmin, pmax, 0x20000000 | (0x00FFFFFF & mPalette[(int)PaletteIndex::Default]));
 					}
 				}
+			}
+
+			if (lineNew) {
+				linesFolded += lineNew - lineNo;
+				lineMax = std::min<int>((int)mLines.size() - 1, lineMax + lineNew - lineNo);
+				lineNo = lineNew;
 			}
 
 			++lineNo;
@@ -2368,12 +2520,14 @@ void TextEditor::mRemoveFolds(const Coordinates& aStart, const Coordinates& aEnd
 			if (mFoldBegin[i].mLine == aStart.mLine && aStart.mLine != aEnd.mLine) {
 				if (mFoldBegin[i].mColumn >= aStart.mColumn) {
 					mFoldBegin.erase(mFoldBegin.begin() + i);
+					mFoldSorted = false;
 					i--;
 				}
 			} else if (mFoldBegin[i].mLine == aEnd.mLine) {
 				if (mFoldBegin[i].mColumn < aEnd.mColumn) {
 					if (aEnd.mLine != aStart.mLine || mFoldBegin[i].mColumn >= aStart.mColumn) {
 						mFoldBegin.erase(mFoldBegin.begin() + i);
+						mFoldSorted = false;
 						i--;
 					}
 				} else {
@@ -2384,6 +2538,7 @@ void TextEditor::mRemoveFolds(const Coordinates& aStart, const Coordinates& aEnd
 				}
 			} else {
 				mFoldBegin.erase(mFoldBegin.begin() + i);
+				mFoldSorted = false;
 				i--;
 			}
 		}
@@ -2395,12 +2550,14 @@ void TextEditor::mRemoveFolds(const Coordinates& aStart, const Coordinates& aEnd
 			if (mFoldEnd[i].mLine == aStart.mLine && aStart.mLine != aEnd.mLine) {
 				if (mFoldEnd[i].mColumn >= aStart.mColumn) {
 					mFoldEnd.erase(mFoldEnd.begin() + i);
+					mFoldSorted = false;
 					i--;
 				}
 			} else if (mFoldEnd[i].mLine == aEnd.mLine) {
 				if (mFoldEnd[i].mColumn < aEnd.mColumn) {
 					if (aEnd.mLine != aStart.mLine || mFoldEnd[i].mColumn >= aStart.mColumn) {
 						mFoldEnd.erase(mFoldEnd.begin() + i);
+						mFoldSorted = false;
 						i--;
 					}
 				} else {
@@ -2411,6 +2568,7 @@ void TextEditor::mRemoveFolds(const Coordinates& aStart, const Coordinates& aEnd
 				}
 			} else {
 				mFoldEnd.erase(mFoldEnd.begin() + i);
+				mFoldSorted = false;
 				i--;
 			}
 		} else if (mFoldEnd[i].mLine > aEnd.mLine)
@@ -3253,6 +3411,7 @@ void TextEditor::SetText(const std::string & aText)
 	mLines.clear();
 	mFoldBegin.clear();
 	mFoldEnd.clear();
+	mFoldSorted = false;
 
 	mLines.emplace_back(Line());
 	for (auto chr : aText)
@@ -3286,6 +3445,7 @@ void TextEditor::SetTextLines(const std::vector<std::string> & aLines)
 	mLines.clear();
 	mFoldBegin.clear();
 	mFoldEnd.clear();
+	mFoldSorted = false;
 
 	if (aLines.empty())
 	{
@@ -3502,12 +3662,14 @@ void TextEditor::EnterCharacter(ImWchar aChar, bool aShift)
 						for (int fl = 0; fl < mFoldBegin.size(); fl++)
 							if (mFoldBegin[fl].mLine == coord.mLine && mFoldBegin[fl].mColumn == coord.mColumn) {
 								mFoldBegin.erase(mFoldBegin.begin() + fl);
+								mFoldSorted = false;
 								break;
 							}
 					if (line[cindex].mChar == '}')
 						for (int fl = 0; fl < mFoldEnd.size(); fl++)
 							if (mFoldEnd[fl].mLine == coord.mLine && mFoldEnd[fl].mColumn == coord.mColumn) {
 								mFoldEnd.erase(mFoldEnd.begin() + fl);
+								mFoldSorted = false;
 								break;
 							}
 
@@ -3517,25 +3679,28 @@ void TextEditor::EnterCharacter(ImWchar aChar, bool aShift)
 
 			// move the folds if necessary
 			int foldOffset = 0;
-			if (buf[0] == '\t')
-				foldOffset = mTabSize - (coord.mColumn - (coord.mColumn / mTabSize) * mTabSize);
-			else
-				foldOffset = strlen(buf);
+			if (buf[0] == '\t') foldOffset = mTabSize - (coord.mColumn - (coord.mColumn / mTabSize) * mTabSize);
+			else foldOffset = strlen(buf);
+
+			int foldColumn = GetCharacterColumn(coord.mLine, cindex);
 			for (int b = 0; b < mFoldBegin.size(); b++) 
-				if (mFoldBegin[b].mLine == coord.mLine && mFoldBegin[b].mColumn >= cindex)
+				if (mFoldBegin[b].mLine == coord.mLine && mFoldBegin[b].mColumn >= foldColumn)
 					mFoldBegin[b].mColumn += foldOffset;
 			printFolds(mFoldEnd);
 			for (int b = 0; b < mFoldEnd.size(); b++)
-				if (mFoldEnd[b].mLine == coord.mLine && mFoldEnd[b].mColumn >= cindex)
+				if (mFoldEnd[b].mLine == coord.mLine && mFoldEnd[b].mColumn >= foldColumn)
 					mFoldEnd[b].mColumn += foldOffset;
 			printFolds(mFoldEnd);
 
 			// insert text
 			for (auto p = buf; *p != '\0'; p++, ++cindex) {
-				if (*p == '{')
-					mFoldBegin.push_back(Coordinates(coord.mLine, cindex));
-				else if (*p == '}')
-					mFoldEnd.push_back(Coordinates(coord.mLine, cindex));
+				if (*p == '{') {
+					mFoldBegin.push_back(Coordinates(coord.mLine, foldColumn));
+					mFoldSorted = false;
+				} else if (*p == '}') {
+					mFoldEnd.push_back(Coordinates(coord.mLine, foldColumn));
+					mFoldSorted = false;
+				}
 
 				line.insert(line.begin() + cindex, Glyph(*p, PaletteIndex::Default));
 			}
