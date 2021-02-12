@@ -631,6 +631,7 @@ private:
 	std::vector<bool> mFold;
 	bool mFoldSorted;
 	void mRemoveFolds(const Coordinates& start, const Coordinates& end);
+	void mRemoveFolds(std::vector<Coordinates>& folds, const Coordinates& start, const Coordinates& end);
 	uint64_t mFoldLastIteration;
 	float mLastScroll;
 

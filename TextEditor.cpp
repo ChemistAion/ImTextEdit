@@ -51,12 +51,6 @@ bool isOpeningBracket(char close, char actual)
 {
 	return (close == '}' && actual == '{') || (close == ']' && actual == '[') || (close == ')' && actual == '(');
 }
-void printFolds(const std::vector<TextEditor::Coordinates>& coords) {
-
-	for (int b = 0; b < coords.size(); b++)
-		printf("[%d, %d]\n", coords[b].mLine, coords[b].mColumn);
-	printf("\n");
-}
 
 TextEditor::TextEditor()
 	: mLineSpacing(1.0f)
@@ -398,25 +392,17 @@ void TextEditor::DeleteRange(const Coordinates& aStart, const Coordinates& aEnd)
 		auto& firstLine = mLines[aStart.mLine];
 		auto& lastLine = mLines[aEnd.mLine];
 
+		// remove the folds
+		mRemoveFolds(aStart, aEnd);
+
 		firstLine.erase(firstLine.begin() + start, firstLine.end());
-
-		int colSizeBefore = GetCharacterColumn(aEnd.mLine, lastLine.size());
 		lastLine.erase(lastLine.begin(), lastLine.begin() + end);
-		int colSizeChange = std::max<int>(0, colSizeBefore - GetCharacterColumn(aEnd.mLine, lastLine.size()));
-
 		if (aStart.mLine < aEnd.mLine)
 			firstLine.insert(firstLine.end(), lastLine.begin(), lastLine.end());
 
 		if (aStart.mLine < aEnd.mLine) {
+			// remove the actual lines
 			RemoveLine(aStart.mLine + 1, aEnd.mLine + 1);
-
-			// folds
-			for (int i = 0; i < mFoldBegin.size(); i++)
-				if (mFoldBegin[i].mLine == aStart.mLine)
-					mFoldBegin[i].mColumn = std::max<int>(0, mFoldBegin[i].mColumn - colSizeChange);
-			for (int i = 0; i < mFoldEnd.size(); i++)
-				if (mFoldEnd[i].mLine == aStart.mLine)
-					mFoldEnd[i].mColumn = std::max<int>(0, mFoldEnd[i].mColumn - colSizeChange);
 		}
 	}
 
@@ -555,32 +541,36 @@ int TextEditor::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aValu
 		}
 		else
 		{
-			if (*aValue == '{') {
-				autoIndent += mTabSize;
-
-				mFoldBegin.push_back(aWhere);
-				mFoldSorted = false;
-			} else if (*aValue == '}') {
-				autoIndent = std::max(0, autoIndent - mTabSize);
-
-				mFoldEnd.push_back(aWhere);
-				mFoldSorted = false;
-			}
-			bool isTab = *aValue == '\t';
+			char aValueOld = *aValue;
+			bool isTab = (aValueOld == '\t');
 			auto& line = mLines[aWhere.mLine];
-			auto d = UTF8CharLength(*aValue);
+			auto d = UTF8CharLength(aValueOld);
 			int foldOffset = 0;
 			while (d-- > 0 && *aValue != '\0') {
 				foldOffset += (*aValue == '\t') ? mTabSize : 1;
 				line.insert(line.begin() + cindex++, Glyph(*aValue++, PaletteIndex::Default));
 			}
 
+			// shift old fold info
 			for (int i = 0; i < mFoldBegin.size(); i++)
 				if (mFoldBegin[i].mLine == aWhere.mLine && mFoldBegin[i].mColumn >= aWhere.mColumn)
 					mFoldBegin[i].mColumn += foldOffset;
 			for (int i = 0; i < mFoldEnd.size(); i++)
 				if (mFoldEnd[i].mLine == aWhere.mLine && mFoldEnd[i].mColumn >= aWhere.mColumn)
 					mFoldEnd[i].mColumn += foldOffset;
+
+			// insert new fold info
+			if (aValueOld == '{') {
+				autoIndent += mTabSize;
+
+				mFoldBegin.push_back(aWhere);
+				mFoldSorted = false;
+			} else if (aValueOld == '}') {
+				autoIndent = std::max(0, autoIndent - mTabSize);
+
+				mFoldEnd.push_back(aWhere);
+				mFoldSorted = false;
+			}
 
 			aWhere.mColumn += (isTab ? mTabSize : 1);
 		}
@@ -992,9 +982,6 @@ void TextEditor::RemoveLine(int aStart, int aEnd)
 
 	mLines.erase(mLines.begin() + aStart, mLines.begin() + aEnd);
 	assert(!mLines.empty());
-
-	// remove folds
-	mRemoveFolds(Coordinates(aStart-1, 0), Coordinates(std::max<int>(aStart-1, aEnd-2), 100000));
 
 	// remove scrollbard markers
 	if (mScrollbarMarkers) {
@@ -1789,10 +1776,12 @@ void TextEditor::RenderInternal(const char* aTitle)
 							int foldCon = mFoldConnection[i];
 							if (foldCon != -1 && foldCon < mFoldEnd.size()) {
 								int diff = mFoldEnd[foldCon].mLine - mFoldBegin[i].mLine;
-								if (foldLineStart < foldLineEnd)
+								if (foldLineStart < foldLineEnd) {
 									linesFolded += diff;
+									foldLineEnd = std::min<int>((int)mLines.size() - 1, foldLineEnd + diff);
+								}
+
 								totalLinesFolded += diff;
-								foldLineEnd = std::min<int>((int)mLines.size() - 1, foldLineEnd + diff);
 							}
 							break;
 						}
@@ -1819,12 +1808,14 @@ void TextEditor::RenderInternal(const char* aTitle)
 			bool lineFolded = false;
 			int lineNew = 0;
 			Coordinates lineFoldStart, lineFoldEnd;
+			int lineFoldStartCIndex = 0;
 			if (mFoldEnabled) {
 				for (int i = 0; i < mFoldBegin.size(); i++) {
 					if (mFoldBegin[i].mLine == lineNo) {
 						if (i < mFold.size()) {
 							lineFolded = mFold[i];
 							lineFoldStart = mFoldBegin[i];
+							lineFoldStartCIndex = GetCharacterIndex(lineFoldStart);
 							
 							int foldCon = mFoldConnection[i];
 							if (lineFolded && foldCon != -1 && foldCon < mFoldEnd.size())
@@ -2018,8 +2009,8 @@ void TextEditor::RenderInternal(const char* aTitle)
 				}
 
 				// skip if folded
-				if (lineFolded && lineFoldStart.mColumn == i - 1) {
-					i = lineFoldEnd.mColumn;
+				if (lineFolded && lineFoldStartCIndex == i - 1) {
+					i = GetCharacterIndex(lineFoldEnd);
 					lineNew = lineFoldEnd.mLine;
 					line = &mLines[lineNew];
 					lineFolded = false;
@@ -2534,68 +2525,69 @@ std::string TextEditor::mBuildVariableType(const ed::SPIRVParser::Variable& var,
 
 void TextEditor::mRemoveFolds(const Coordinates& aStart, const Coordinates& aEnd)
 {
+	mRemoveFolds(mFoldBegin, aStart, aEnd);
+	mRemoveFolds(mFoldEnd, aStart, aEnd);
+}
+void TextEditor::mRemoveFolds(std::vector<Coordinates>& folds, const Coordinates& aStart, const Coordinates& aEnd)
+{
 	bool deleteFullyLastLine = false;
 	if (aEnd.mLine >= mLines.size() || aEnd.mColumn >= 100000)
 		deleteFullyLastLine = true;
 
-	for (int i = 0; i < mFoldBegin.size(); i++) {
-		if (mFoldBegin[i].mLine >= aStart.mLine && mFoldBegin[i].mLine <= aEnd.mLine) {
-			if (mFoldBegin[i].mLine == aStart.mLine && aStart.mLine != aEnd.mLine) {
-				if (mFoldBegin[i].mColumn >= aStart.mColumn) {
-					mFoldBegin.erase(mFoldBegin.begin() + i);
+	for (int i = 0; i < folds.size(); i++) {
+		if (folds[i].mLine >= aStart.mLine && folds[i].mLine <= aEnd.mLine) {
+			if (folds[i].mLine == aStart.mLine && aStart.mLine != aEnd.mLine) {
+				if (folds[i].mColumn >= aStart.mColumn) {
+					folds.erase(folds.begin() + i);
 					mFoldSorted = false;
 					i--;
 				}
-			} else if (mFoldBegin[i].mLine == aEnd.mLine) {
-				if (mFoldBegin[i].mColumn < aEnd.mColumn) {
-					if (aEnd.mLine != aStart.mLine || mFoldBegin[i].mColumn >= aStart.mColumn) {
-						mFoldBegin.erase(mFoldBegin.begin() + i);
+			} else if (folds[i].mLine == aEnd.mLine) {
+				if (folds[i].mColumn < aEnd.mColumn) {
+					if (aEnd.mLine != aStart.mLine || folds[i].mColumn >= aStart.mColumn) {
+						folds.erase(folds.begin() + i);
 						mFoldSorted = false;
 						i--;
 					}
 				} else {
 					if (aEnd.mLine == aStart.mLine)
-						mFoldBegin[i].mColumn = std::max<int>(0, mFoldBegin[i].mColumn - (aEnd.mColumn - aStart.mColumn));
-					else
-						mFoldBegin[i].mLine -= (aEnd.mLine - aStart.mLine);
-				}
-			} else {
-				mFoldBegin.erase(mFoldBegin.begin() + i);
-				mFoldSorted = false;
-				i--;
-			}
-		}
-		else if (mFoldBegin[i].mLine > aEnd.mLine)
-			mFoldBegin[i].mLine -= (aEnd.mLine - aStart.mLine) + deleteFullyLastLine;
-	}
-	for (int i = 0; i < mFoldEnd.size(); i++) {
-		if (mFoldEnd[i].mLine >= aStart.mLine && mFoldEnd[i].mLine <= aEnd.mLine) {
-			if (mFoldEnd[i].mLine == aStart.mLine && aStart.mLine != aEnd.mLine) {
-				if (mFoldEnd[i].mColumn >= aStart.mColumn) {
-					mFoldEnd.erase(mFoldEnd.begin() + i);
-					mFoldSorted = false;
-					i--;
-				}
-			} else if (mFoldEnd[i].mLine == aEnd.mLine) {
-				if (mFoldEnd[i].mColumn < aEnd.mColumn) {
-					if (aEnd.mLine != aStart.mLine || mFoldEnd[i].mColumn >= aStart.mColumn) {
-						mFoldEnd.erase(mFoldEnd.begin() + i);
-						mFoldSorted = false;
-						i--;
+						folds[i].mColumn = std::max<int>(0, folds[i].mColumn - (aEnd.mColumn - aStart.mColumn));
+					else {
+						// calculate new
+						if (aStart.mLine < mLines.size()) {
+							auto* line = &mLines[aStart.mLine];
+							int colOffset = 0;
+							int chi = 0;
+							bool skipped = false;
+							int bracketEndChIndex = GetCharacterIndex(mFoldEnd[i]);
+							while (chi < (int)line->size() && (!skipped || (skipped && chi < bracketEndChIndex))) {
+								auto c = (*line)[chi].mChar;
+								chi += UTF8CharLength(c);
+								if (c == '\t')
+									colOffset = (colOffset / mTabSize) * mTabSize + mTabSize;
+								else
+									colOffset++;
+
+								// go to the last line
+								if (chi == line->size() && aEnd.mLine < mLines.size() && !skipped) {
+									chi = GetCharacterIndex(aEnd);
+									line = &mLines[aEnd.mLine];
+									skipped = true;
+								}
+							}
+							folds[i].mColumn = colOffset;
+						}
+
+						folds[i].mLine -= (aEnd.mLine - aStart.mLine);
 					}
-				} else {
-					if (aEnd.mLine == aStart.mLine)
-						mFoldEnd[i].mColumn = std::max<int>(0, mFoldEnd[i].mColumn - (aEnd.mColumn - aStart.mColumn));
-					else
-						mFoldEnd[i].mLine -= (aEnd.mLine - aStart.mLine);
 				}
 			} else {
-				mFoldEnd.erase(mFoldEnd.begin() + i);
+				folds.erase(folds.begin() + i);
 				mFoldSorted = false;
 				i--;
 			}
-		} else if (mFoldEnd[i].mLine > aEnd.mLine)
-			mFoldEnd[i].mLine -= (aEnd.mLine - aStart.mLine) + deleteFullyLastLine;
+		} else if (folds[i].mLine > aEnd.mLine)
+			folds[i].mLine -= (aEnd.mLine - aStart.mLine) + deleteFullyLastLine;
 	}
 }
 
@@ -3647,11 +3639,9 @@ void TextEditor::EnterCharacter(ImWchar aChar, bool aShift)
 		for (int b = 0; b < mFoldBegin.size(); b++)
 			if (mFoldBegin[b].mLine == coord.mLine + 1)
 				mFoldBegin[b].mColumn = std::max<int>(0, (mFoldBegin[b].mColumn + foldOffset) + (mFoldBegin[b].mColumn != coord.mColumn));
-		printFolds(mFoldEnd);
 		for (int b = 0; b < mFoldEnd.size(); b++)
 			if (mFoldEnd[b].mLine == coord.mLine + 1)
 				mFoldEnd[b].mColumn = std::max<int>(0, (mFoldEnd[b].mColumn + foldOffset) + (mFoldEnd[b].mColumn != coord.mColumn));
-		printFolds(mFoldEnd);
 	}
 	else
 	{
@@ -3709,11 +3699,9 @@ void TextEditor::EnterCharacter(ImWchar aChar, bool aShift)
 			for (int b = 0; b < mFoldBegin.size(); b++) 
 				if (mFoldBegin[b].mLine == coord.mLine && mFoldBegin[b].mColumn >= foldColumn)
 					mFoldBegin[b].mColumn += foldOffset;
-			printFolds(mFoldEnd);
 			for (int b = 0; b < mFoldEnd.size(); b++)
 				if (mFoldEnd[b].mLine == coord.mLine && mFoldEnd[b].mColumn >= foldColumn)
 					mFoldEnd[b].mColumn += foldOffset;
-			printFolds(mFoldEnd);
 
 			// insert text
 			for (auto p = buf; *p != '\0'; p++, ++cindex) {
@@ -4344,13 +4332,11 @@ void TextEditor::Backspace()
 					mFoldBegin[b].mLine = std::max<int>(0, mFoldBegin[b].mLine - 1);
 					mFoldBegin[b].mColumn = mFoldBegin[b].mColumn + prevSize;
 				}
-			printFolds(mFoldEnd);
 			for (int b = 0; b < mFoldEnd.size(); b++)
 				if (mFoldEnd[b].mLine == mState.mCursorPosition.mLine) {
 					mFoldEnd[b].mLine = std::max<int>(0, mFoldEnd[b].mLine - 1);
 					mFoldEnd[b].mColumn = mFoldEnd[b].mColumn + prevSize;
 				}
-			printFolds(mFoldEnd);
 
 			RemoveLine(mState.mCursorPosition.mLine);
 			--mState.mCursorPosition.mLine;
@@ -4399,9 +4385,7 @@ void TextEditor::Backspace()
 				mState.mCursorPosition.mColumn -= remSize;
 			}
 		
-			printFolds(mFoldEnd);
 			mRemoveFolds(u.mRemovedStart, u.mRemovedEnd);
-			printFolds(mFoldEnd);
 		}
 
 		if (mScrollbarMarkers) {
@@ -4482,26 +4466,20 @@ void TextEditor::Copy()
 
 void TextEditor::Cut()
 {
-	if (IsReadOnly())
-	{
+	if (IsReadOnly()) {
 		Copy();
-	}
-	else
-	{
-		if (HasSelection())
-		{
-			UndoRecord u;
-			u.mBefore = mState;
-			u.mRemoved = GetSelectedText();
-			u.mRemovedStart = mState.mSelectionStart;
-			u.mRemovedEnd = mState.mSelectionEnd;
+	} else if (HasSelection()) {
+		UndoRecord u;
+		u.mBefore = mState;
+		u.mRemoved = GetSelectedText();
+		u.mRemovedStart = mState.mSelectionStart;
+		u.mRemovedEnd = mState.mSelectionEnd;
 
-			Copy();
-			DeleteSelection();
+		Copy();
+		DeleteSelection();
 
-			u.mAfter = mState;
-			AddUndo(u);
-		}
+		u.mAfter = mState;
+		AddUndo(u);
 	}
 }
 
