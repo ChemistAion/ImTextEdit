@@ -630,10 +630,9 @@ TextEditor::Coordinates TextEditor::ScreenPosToCoordinates(const ImVec2& aPositi
 
 	// check for folds
 	if (mFoldEnabled) {
-		int foldOffset = 0;
-		auto foldLineStart = (int)floor(mLastScroll / mCharAdvance.y);
-		auto foldLineEnd = std::min<int>((int)mLines.size() - 1, foldLineStart + (lineNo - foldLineStart));
-		while (foldLineStart <= foldLineEnd) {
+		auto foldLineStart = 0;
+		auto foldLineEnd = std::min<int>((int)mLines.size() - 1, lineNo);
+		while (foldLineStart < foldLineEnd) {
 			// check if line is folded
 			for (int i = 0; i < mFoldBegin.size(); i++) {
 				if (mFoldBegin[i].mLine == foldLineStart) {
@@ -641,7 +640,7 @@ TextEditor::Coordinates TextEditor::ScreenPosToCoordinates(const ImVec2& aPositi
 						int foldCon = mFoldConnection[i];
 						if (foldCon != -1 && foldCon < mFoldEnd.size()) {
 							int diff = mFoldEnd[foldCon].mLine - mFoldBegin[i].mLine;
-							foldOffset += diff;
+							lineNo += diff;
 							foldLineEnd = std::min<int>((int)mLines.size() - 1, foldLineEnd + diff);
 						}
 						break;
@@ -650,7 +649,6 @@ TextEditor::Coordinates TextEditor::ScreenPosToCoordinates(const ImVec2& aPositi
 			}
 			foldLineStart++;
 		}
-		lineNo += foldOffset;
 	}
 
 	if (lineNo >= 0 && lineNo < (int)mLines.size())
@@ -706,10 +704,9 @@ TextEditor::Coordinates TextEditor::MousePosToCoordinates(const ImVec2& aPositio
 
 	// check for folds
 	if (mFoldEnabled) {
-		int foldOffset = 0;
-		auto foldLineStart = (int)floor(mLastScroll / mCharAdvance.y);
-		auto foldLineEnd = std::min<int>((int)mLines.size() - 1, foldLineStart + (lineNo - foldLineStart));
-		while (foldLineStart <= foldLineEnd) {
+		auto foldLineStart = 0;
+		auto foldLineEnd = std::min<int>((int)mLines.size() - 1, lineNo);
+		while (foldLineStart < foldLineEnd) {
 			// check if line is folded
 			for (int i = 0; i < mFoldBegin.size(); i++) {
 				if (mFoldBegin[i].mLine == foldLineStart) {
@@ -717,7 +714,7 @@ TextEditor::Coordinates TextEditor::MousePosToCoordinates(const ImVec2& aPositio
 						int foldCon = mFoldConnection[i];
 						if (foldCon != -1 && foldCon < mFoldEnd.size()) {
 							int diff = mFoldEnd[foldCon].mLine - mFoldBegin[i].mLine;
-							foldOffset += diff;
+							lineNo += diff;
 							foldLineEnd = std::min<int>((int)mLines.size() - 1, foldLineEnd + diff);
 						}
 						break;
@@ -726,7 +723,6 @@ TextEditor::Coordinates TextEditor::MousePosToCoordinates(const ImVec2& aPositio
 			}
 			foldLineStart++;
 		}
-		lineNo += foldOffset;
 	}
 
 	if (lineNo >= 0 && lineNo < (int)mLines.size()) {
@@ -1648,6 +1644,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 	auto lineNo = (int)floor(scrollY / mCharAdvance.y);
 	auto globalLineMax = (int)mLines.size();
 	auto lineMax = std::max<int>(0, std::min<int>((int)mLines.size() - 1, lineNo + pageSize));
+	int totalLinesFolded = 0;
 
 	// Deduce mTextStart by evaluating mLines size (global lineMax) plus two spaces as text width
 	char buf[16];
@@ -1746,39 +1743,65 @@ void TextEditor::RenderInternal(const char* aTitle)
 		int hoverFoldWeight = 0;
 		int linesFolded = 0;
 		uint64_t curTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-		if (mFoldEnabled && curTime - mFoldLastIteration > 3000) {
-			// sort if needed
-			if (!mFoldSorted) {
-				std::sort(mFoldBegin.begin(), mFoldBegin.end());
-				std::sort(mFoldEnd.begin(), mFoldEnd.end());
-				mFoldSorted = true;
-			}
-
-			// resize if needed
-			if (mFold.size() != mFoldBegin.size()) {
-				mFold.resize(mFoldBegin.size(), false);
-				mFoldConnection.resize(mFoldBegin.size(), -1);
-			}
-
-			// reconnect every fold BEGIN with END (TODO: any better way to do this?)
-			std::vector<bool> foldUsed(mFoldEnd.size(), false);
-			for (int i = mFoldBegin.size() - 1; i >= 0; i--) {
-				int j = mFoldEnd.size() - 1;
-				int lastUnused = j;
-				for (; j >= 0; j--) {
-					if (mFoldEnd[j] < mFoldBegin[i])
-						break;
-					if (!foldUsed[j])
-						lastUnused = j;
+		if (mFoldEnabled) {
+			if (curTime - mFoldLastIteration > 3000) {
+				// sort if needed
+				if (!mFoldSorted) {
+					std::sort(mFoldBegin.begin(), mFoldBegin.end());
+					std::sort(mFoldEnd.begin(), mFoldEnd.end());
+					mFoldSorted = true;
 				}
 
-				if (lastUnused < mFoldEnd.size()) {
-					foldUsed[lastUnused] = true;
-					mFoldConnection[i] = lastUnused;
+				// resize if needed
+				if (mFold.size() != mFoldBegin.size()) {
+					mFold.resize(mFoldBegin.size(), false);
+					mFoldConnection.resize(mFoldBegin.size(), -1);
 				}
-			}
 
-			mFoldLastIteration = curTime;
+				// reconnect every fold BEGIN with END (TODO: any better way to do this?)
+				std::vector<bool> foldUsed(mFoldEnd.size(), false);
+				for (int i = mFoldBegin.size() - 1; i >= 0; i--) {
+					int j = mFoldEnd.size() - 1;
+					int lastUnused = j;
+					for (; j >= 0; j--) {
+						if (mFoldEnd[j] < mFoldBegin[i])
+							break;
+						if (!foldUsed[j])
+							lastUnused = j;
+					}
+
+					if (lastUnused < mFoldEnd.size()) {
+						foldUsed[lastUnused] = true;
+						mFoldConnection[i] = lastUnused;
+					}
+				}
+
+				mFoldLastIteration = curTime;
+			}
+		
+			auto foldLineStart = 0;
+			auto foldLineEnd = std::min<int>((int)mLines.size() - 1, lineNo);
+			while (foldLineStart < mLines.size()) {
+				// check if line is folded
+				for (int i = 0; i < mFoldBegin.size(); i++) {
+					if (mFoldBegin[i].mLine == foldLineStart) {
+						if (i < mFold.size() && mFold[i]) {
+							int foldCon = mFoldConnection[i];
+							if (foldCon != -1 && foldCon < mFoldEnd.size()) {
+								int diff = mFoldEnd[foldCon].mLine - mFoldBegin[i].mLine;
+								if (foldLineStart < foldLineEnd)
+									linesFolded += diff;
+								totalLinesFolded += diff;
+								foldLineEnd = std::min<int>((int)mLines.size() - 1, foldLineEnd + diff);
+							}
+							break;
+						}
+					}
+				}
+				foldLineStart++;
+			}
+			lineNo += linesFolded;
+			lineMax = std::max<int>(0, std::min<int>((int)mLines.size() - 1, lineNo + pageSize));
 		}
 
 		// render
@@ -2378,7 +2401,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 		}
 	}
 
-	ImGui::Dummy(ImVec2(longest + mEditorCalculateSize(100), mLines.size() * mCharAdvance.y));
+	ImGui::Dummy(ImVec2(longest + mEditorCalculateSize(100), (mLines.size() - totalLinesFolded) * mCharAdvance.y));
 
 	if (mDebugCurrentLineUpdated) {
 		float scrollX = ImGui::GetScrollX();
