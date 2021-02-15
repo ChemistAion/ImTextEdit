@@ -127,6 +127,8 @@ TextEditor::TextEditor()
 	OnExpressionHover = nullptr;
 	HasExpressionHover = nullptr;
 
+	RequestOpen = nullptr;
+
 	mDebugBarWidth = 0.0f;
 	mDebugBarHeight = 0.0f;
 
@@ -1126,6 +1128,34 @@ ImU32 TextEditor::GetGlyphColor(const Glyph & aGlyph) const
 	return color;
 }
 
+TextEditor::Coordinates TextEditor::FindFirst(const std::string& what, const Coordinates& fromWhere)
+{
+	if (fromWhere.mLine < 0 || fromWhere.mLine >= mLines.size())
+		return Coordinates(mLines.size(), 0);
+
+	std::string textSrc = GetText(fromWhere, Coordinates((int)mLines.size(), 0));
+
+	size_t index = 0;
+	size_t loc = textSrc.find(what);
+	Coordinates ret = fromWhere;
+	while (loc != std::string::npos) {
+		for (; index < loc; index++) {
+			if (textSrc[index] == '\n') {
+				ret.mColumn = 0;
+				ret.mLine++;
+			} else
+				ret.mColumn++;
+		}
+		ret.mColumn = GetCharacterColumn(ret.mLine, ret.mColumn); // ret.mColumn is currently character index, convert it to character column
+		if (GetWordAt(ret) == what)
+			return ret;
+		else
+			loc = textSrc.find(what, loc + 1);
+	}
+
+	return Coordinates(mLines.size(), 0);
+}
+
 void TextEditor::HandleKeyboardInputs()
 {
 	ImGuiIO& io = ImGui::GetIO();
@@ -1638,6 +1668,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 	snprintf(buf, 16, " %3d ", globalLineMax);
 	mTextStart = (ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x + mLeftMargin) * mSidebar;
 
+	// render
 	GetPageSize();
 	if (!mLines.empty())
 	{
@@ -2217,7 +2248,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 		}
 
 		// Draw a tooltip on known identifiers/preprocessor symbols
-		if (ImGui::IsMousePosValid() && (IsDebugging() || mFuncTooltips))
+		if (ImGui::IsMousePosValid() && (IsDebugging() || mFuncTooltips || ImGui::GetIO().KeyCtrl))
 		{
 			Coordinates hoverPosition = MousePosToCoordinates(ImGui::GetMousePos());
 			if (hoverPosition != mLastHoverPosition) {
@@ -2303,30 +2334,168 @@ void TextEditor::RenderInternal(const char* aTitle)
 						OnExpressionHover(this, expr);
 						ImGui::EndTooltip();
 					}				}
-			} else if (hoverTime > 0.2) {
-				auto id = GetWordAt(ScreenPosToCoordinates(ImGui::GetMousePos()));
+			}
+			else if (hoverTime > 0.2) {
+				Coordinates wordCoords = ScreenPosToCoordinates(ImGui::GetMousePos());
+				auto id = GetWordAt(wordCoords);
+				bool isCtrlDown = ImGui::GetIO().KeyCtrl;
+
 				if (!id.empty()) {
-					auto it = mLanguageDefinition.mIdentifiers.find(id);
-					if (it != mLanguageDefinition.mIdentifiers.end()) {
-						ImGui::BeginTooltip();
-						ImGui::TextUnformatted(it->second.mDeclaration.c_str());
-						ImGui::EndTooltip();
-					} else {
-						auto pi = mLanguageDefinition.mPreprocIdentifiers.find(id);
-						if (pi != mLanguageDefinition.mPreprocIdentifiers.end()) {
+					// function/value tooltips
+					if (!isCtrlDown) {
+						auto it = mLanguageDefinition.mIdentifiers.find(id);
+						if (it != mLanguageDefinition.mIdentifiers.end() && mFuncTooltips) {
 							ImGui::BeginTooltip();
-							ImGui::TextUnformatted(pi->second.mDeclaration.c_str());
+							ImGui::TextUnformatted(it->second.mDeclaration.c_str());
 							ImGui::EndTooltip();
-						} else if (IsDebugging() && OnIdentifierHover && HasIdentifierHover) {
-							if (HasIdentifierHover(this, id)) {
+						} else {
+							auto pi = mLanguageDefinition.mPreprocIdentifiers.find(id);
+							if (pi != mLanguageDefinition.mPreprocIdentifiers.end() && mFuncTooltips) {
 								ImGui::BeginTooltip();
-								OnIdentifierHover(this, id);
+								ImGui::TextUnformatted(pi->second.mDeclaration.c_str());
+								ImGui::EndTooltip();
+							} else if (IsDebugging() && OnIdentifierHover && HasIdentifierHover) {
+								if (HasIdentifierHover(this, id)) {
+									ImGui::BeginTooltip();
+									OnIdentifierHover(this, id);
+									ImGui::EndTooltip();
+								}
+							} else if (mACFunctions.count(id) && mFuncTooltips) {
+								ImGui::BeginTooltip();
+								ImGui::TextUnformatted(mBuildFunctionDef(id, mLanguageDefinition.mName).c_str());
 								ImGui::EndTooltip();
 							}
-						} else if (mACFunctions.count(id)) {
-							ImGui::BeginTooltip();
-							ImGui::TextUnformatted(mBuildFunctionDef(id, mLanguageDefinition.mName).c_str());
-							ImGui::EndTooltip();
+						}
+					}
+					// CTRL + click functionality
+					else {
+						bool hasUnderline = false;
+						bool isHeader = false;
+						bool isFindFirst = false;
+						Coordinates findStart(0, 0);
+						std::string header = "";
+						Coordinates wordStart = FindWordStart(wordCoords);
+						Coordinates wordEnd = FindWordEnd(wordCoords);
+
+						// check if header
+						if (wordStart.mLine >= 0 && wordStart.mLine < mLines.size()) {
+							// get the contents of the line in std::string
+							const auto& line = mLines[wordStart.mLine];
+							std::string text;
+							text.resize(line.size());
+							for (size_t i = 0; i < line.size(); ++i)
+								text[i] = line[i].mChar;
+
+							// find #include
+							size_t includeLoc = text.find("#include");
+							size_t includeStart = std::string::npos, includeEnd = std::string::npos;
+							if (text.size() > 0 && includeLoc != std::string::npos) {
+
+								for (size_t f = includeLoc; f < text.size(); f++) {
+									if (text[f] == '<' || text[f] == '\"')
+										includeStart = f + 1;
+									else if (text[f] == '>' || text[f] == '\"') {
+										includeEnd = f - 1;
+										break;
+									}
+								}
+							}
+
+							if (includeStart != std::string::npos && includeEnd != std::string::npos) {
+								hasUnderline = true;
+								isHeader = true;
+								
+								header = text.substr(includeStart, includeEnd-includeStart + 1);
+								wordStart.mColumn = 0;
+								wordEnd.mColumn = GetCharacterColumn(wordEnd.mLine, line.size());
+							}
+						}
+
+						// check if mul, sin, cos, etc...
+						if (!hasUnderline && mLanguageDefinition.mIdentifiers.find(id) != mLanguageDefinition.mIdentifiers.end()) 
+							hasUnderline = true;
+
+						// check if function
+						if (!hasUnderline && mACFunctions.count(id) > 0)
+							hasUnderline = true;
+
+						// check if user type variable
+						if (!hasUnderline && mACUserTypes.count(id) > 0) {
+							hasUnderline = true;
+							isFindFirst = true;
+						}
+
+						// check if local variable
+						if (!hasUnderline) {
+							for (const auto& func : mACFunctions) {
+								if (wordCoords.mLine >= func.second.LineStart && wordCoords.mLine <= func.second.LineEnd) {
+									for (const auto& local : func.second.Locals) {
+										if (local.Name == id) {
+											hasUnderline = true;
+											isFindFirst = true;
+											findStart = Coordinates(func.second.LineStart - 1, 0);
+											break;
+										}
+									}
+									break;
+								}
+							}
+						}
+
+						// check if global/uniform variable
+						if (!hasUnderline) {
+							for (const auto& glob : mACGlobals)
+								if (glob.Name == id) {
+									hasUnderline = true;
+									isFindFirst = true;
+									break;
+								}
+							for (const auto& unif : mACUniforms) 
+								if (unif.Name == id) {
+									hasUnderline = true;
+									isFindFirst = true;
+									break;
+								}
+						}
+
+						// draw the underline
+						if (hasUnderline) {
+							ImVec2 ulinePos = ImVec2(cursorScreenPos.x + mTextStart, cursorScreenPos.y + wordStart.mLine * mCharAdvance.y);
+							drawList->AddLine(ImVec2(ulinePos.x + wordStart.mColumn * mCharAdvance.x, ulinePos.y + mCharAdvance.y),
+								ImVec2(ulinePos.x + wordEnd.mColumn * mCharAdvance.x, ulinePos.y + mCharAdvance.y),
+								ImGui::GetColorU32(ImGuiCol_HeaderHovered));
+							ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
+
+							if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+								if (isHeader) {
+									if (RequestOpen)
+										RequestOpen(this, this->mPath, header);
+								}
+								else {
+									// go to function definition
+									if (mACFunctions.count(id)) {
+										int funcLine = mACFunctions[id].LineStart - 1;
+										if (funcLine > 0 && funcLine < mLines.size()) {
+											mState.mCursorPosition.mLine = funcLine;
+											mState.mCursorPosition.mColumn = 0;
+											EnsureCursorVisible();
+										}
+									}
+
+									// go to type definition
+									if (isFindFirst) {
+										Coordinates userTypeLoc = FindFirst(id, findStart);
+										if (userTypeLoc.mLine >= 0 && userTypeLoc.mLine < mLines.size()) {
+											mState.mCursorPosition = userTypeLoc;
+											SetSelectionStart(userTypeLoc);
+											SetSelectionEnd(FindWordEnd(userTypeLoc));
+											EnsureCursorVisible();
+										}
+									}
+
+									// TODO: identifier documentation
+								}
+							}
 						}
 					}
 				}
@@ -4910,7 +5079,6 @@ void TextEditor::GetTextLines(std::vector<std::string>& result) const
 	for (auto & line : mLines)
 	{
 		std::string text;
-
 		text.resize(line.size());
 
 		for (size_t i = 0; i < line.size(); ++i)

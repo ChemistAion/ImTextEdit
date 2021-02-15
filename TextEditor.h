@@ -498,6 +498,7 @@ public:
 	std::function<void(TextEditor*, int)> OnBreakpointRemove;
 	std::function<void(TextEditor*, int, bool, const std::string&, bool)> OnBreakpointUpdate;
 
+	std::function<void(TextEditor*, const std::string&, const std::string&)> RequestOpen;
 	std::function<void(TextEditor*)> OnContentUpdate;
 
 	inline void SetPath(const std::string& path) { mPath = path; }
@@ -581,6 +582,8 @@ private:
 	std::string GetWordUnderCursor() const;
 	std::string GetWordAt(const Coordinates& aCoords) const;
 	ImU32 GetGlyphColor(const Glyph& aGlyph) const;
+
+	Coordinates FindFirst(const std::string& what, const Coordinates& fromWhere);
 
 	void HandleKeyboardInputs();
 	void HandleMouseInputs();
