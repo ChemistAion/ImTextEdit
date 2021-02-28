@@ -498,6 +498,7 @@ public:
 	std::function<void(TextEditor*, int)> OnBreakpointRemove;
 	std::function<void(TextEditor*, int, bool, const std::string&, bool)> OnBreakpointUpdate;
 
+	std::function<void(TextEditor*, const std::string&, TextEditor::Coordinates coords)> OnCtrlAltClick;
 	std::function<void(TextEditor*, const std::string&, const std::string&)> RequestOpen;
 	std::function<void(TextEditor*)> OnContentUpdate;
 

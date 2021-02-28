@@ -2484,12 +2484,18 @@ void TextEditor::RenderInternal(const char* aTitle)
 
 									// go to type definition
 									if (isFindFirst) {
-										Coordinates userTypeLoc = FindFirst(id, findStart);
-										if (userTypeLoc.mLine >= 0 && userTypeLoc.mLine < mLines.size()) {
-											mState.mCursorPosition = userTypeLoc;
-											SetSelectionStart(userTypeLoc);
-											SetSelectionEnd(FindWordEnd(userTypeLoc));
-											EnsureCursorVisible();
+										if (!ImGui::GetIO().KeyAlt) {
+											Coordinates userTypeLoc = FindFirst(id, findStart);
+											if (userTypeLoc.mLine >= 0 && userTypeLoc.mLine < mLines.size()) {
+												mState.mCursorPosition = userTypeLoc;
+												SetSelectionStart(userTypeLoc);
+												SetSelectionEnd(FindWordEnd(userTypeLoc));
+												EnsureCursorVisible();
+											}
+										}
+										else {
+											if (OnCtrlAltClick) 
+												this->OnCtrlAltClick(this, id, wordCoords);
 										}
 									}
 
