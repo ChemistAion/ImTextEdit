@@ -2428,7 +2428,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 						// check if local variable
 						if (!hasUnderline) {
 							for (const auto& func : mACFunctions) {
-								if (wordCoords.mLine >= func.second.LineStart && wordCoords.mLine <= func.second.LineEnd) {
+								if (wordCoords.mLine + 1 >= func.second.LineStart && wordCoords.mLine + 1 <= func.second.LineEnd) {
 									for (const auto& local : func.second.Locals) {
 										if (local.Name == id) {
 											hasUnderline = true;
