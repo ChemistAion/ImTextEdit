@@ -2126,7 +2126,7 @@ void TextEditor::RenderInternal(const char* aTitle)
 				}
 
 				// fold +/- icon
-				if (mFoldEnabled) { // TODO: mFoldEnabled
+				if (mFoldEnabled) {
 					int foldID = 0;
 					int foldWeight = 0;
 					bool hasFold = false;
@@ -2187,6 +2187,9 @@ void TextEditor::RenderInternal(const char* aTitle)
 						{
 							isHovered = true;
 							hoverFoldWeight = foldWeight;
+							if (isFolded)
+								hoverFoldWeight = 0;
+
 							ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
 
 							if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
