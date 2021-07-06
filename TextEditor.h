@@ -317,7 +317,8 @@ public:
 	void SetBreakpointEnabled(int line, bool enable);
 	Breakpoint& GetBreakpoint(int line);
 	inline const std::vector<Breakpoint>& GetBreakpoints() { return mBreakpoints; }
-	void SetCurrentLineIndicator(int line);
+	void SetCurrentLineIndicator(int line, bool displayBar = true);
+	inline int GetCurrentLineIndicator() { return mDebugCurrentLine; }
 
 	inline bool IsDebugging() { return mDebugCurrentLine > 0; }
 
@@ -708,6 +709,7 @@ private:
 
 	float mDebugBarWidth, mDebugBarHeight;
 
+	bool mDebugBar;
 	bool mDebugCurrentLineUpdated;
 	int mDebugCurrentLine;
 	ImVec2 mUICursorPos, mFindOrigin;

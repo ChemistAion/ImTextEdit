@@ -84,6 +84,7 @@ TextEditor::TextEditor()
 	, mHandleMouseInputs(true)
 	, mIgnoreImGuiChild(false)
 	, mShowWhitespaces(false)
+	, mDebugBar(false)
 	, mDebugCurrentLineUpdated(false)
 	, mDebugCurrentLine(-1)
 	, mPath("")
@@ -2606,10 +2607,10 @@ void TextEditor::RenderInternal(const char* aTitle)
 	// hacky way to get the bg working
 	if (mFindOpened)
 	{
-		ImVec2 findPos = ImVec2(mUICursorPos.x + scrollX + mWindowWidth - mUICalculateSize(250), mUICursorPos.y + ImGui::GetScrollY() + mUICalculateSize(50) * IsDebugging());
+		ImVec2 findPos = ImVec2(mUICursorPos.x + scrollX + mWindowWidth - mUICalculateSize(250), mUICursorPos.y + ImGui::GetScrollY() + mUICalculateSize(50) * (IsDebugging() && mDebugBar));
 		drawList->AddRectFilled(findPos, ImVec2(findPos.x + mUICalculateSize(220), findPos.y + mUICalculateSize(mReplaceOpened ? 90 : 40)), ImGui::GetColorU32(ImGuiCol_WindowBg));
 	}
-	if (IsDebugging())
+	if (IsDebugging() && mDebugBar)
 	{
 		ImVec2 dbgPos = ImVec2(mUICursorPos.x + scrollX + mWindowWidth / 2 - mDebugBarWidth / 2, mUICursorPos.y + ImGui::GetScrollY());
 		drawList->AddRectFilled(dbgPos, ImVec2(dbgPos.x + mDebugBarWidth, dbgPos.y + mDebugBarHeight), ImGui::GetColorU32(ImGuiCol_FrameBg));
@@ -3275,7 +3276,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		ImFont* font = ImGui::GetFont();
 		ImGui::PopFont();
 
-		ImGui::SetNextWindowPos(ImVec2(mFindOrigin.x + windowWidth - mUICalculateSize(250), mFindOrigin.y + mUICalculateSize(50) * IsDebugging()), ImGuiCond_Always);
+		ImGui::SetNextWindowPos(ImVec2(mFindOrigin.x + windowWidth - mUICalculateSize(250), mFindOrigin.y + mUICalculateSize(50) * (IsDebugging() && mDebugBar)), ImGuiCond_Always);
 		ImGui::BeginChild(("##ted_findwnd" + std::string(aTitle)).c_str(), ImVec2(mUICalculateSize(220), mUICalculateSize(mReplaceOpened ? 90 : 40)), true, ImGuiWindowFlags_NoScrollbar);
 
 		// check for findnext shortcut here...
@@ -3501,7 +3502,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 	}
 
 	/* DEBUGGER CONTROLS */
-	if (IsDebugging())
+	if (IsDebugging() && mDebugBar)
 	{
 		ImFont* font = ImGui::GetFont();
 		ImGui::PopFont();
@@ -4718,7 +4719,7 @@ std::vector<std::string> TextEditor::GetRelevantExpressions(int line)
 	std::vector<std::string> ret;
 	line--;
 
-	if (line < 0 || (mLanguageDefinition.mName != "HLSL" && mLanguageDefinition.mName != "GLSL"))
+	if (line < 0 || line >= mLines.size() || (mLanguageDefinition.mName != "HLSL" && mLanguageDefinition.mName != "GLSL"))
 		return ret;
 
 	std::string expr = "";
@@ -5499,9 +5500,11 @@ void TextEditor::EnsureCursorVisible()
 	if (len + mTextStart > (right - 4) * mCharAdvance.x)
 		ImGui::SetScrollX(std::max(0.0f, len + mTextStart + 4 * mCharAdvance.x - width));
 }
-void TextEditor::SetCurrentLineIndicator(int line) {
+void TextEditor::SetCurrentLineIndicator(int line, bool displayBar)
+{
 	mDebugCurrentLine = line;
 	mDebugCurrentLineUpdated = line > 0;
+	mDebugBar = displayBar;
 }
 
 int TextEditor::GetPageSize() const
