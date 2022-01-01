@@ -18,8 +18,8 @@
 #endif
 
 #define IMGUI_DEFINE_MATH_OPERATORS
-#include <imgui/imgui.h> // for imGui::GetCurrentWindow()
-#include <imgui/imgui_internal.h>
+#include "imgui/imgui.h"
+#include "imgui/imgui_internal.h"
 
 // TODO
 // - multiline comments vs single-line: latter is blocking start of a ML

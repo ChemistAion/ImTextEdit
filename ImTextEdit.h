@@ -11,12 +11,10 @@
 #include <map>
 #include <regex>
 
-//#define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui.h"
-//#include "imgui_internal.h"
 //#include <SHADERed/Objects/SPIRVParser.h>
 
-class TextEditor {
+class ImTextEdit {
 public:
 	enum class PaletteIndex {
 		Default,
@@ -303,8 +301,8 @@ public:
 		static void m_GLSLDocumentation(Identifiers& idents);
 	};
 
-	TextEditor();
-	~TextEditor();
+	ImTextEdit();
+	~ImTextEdit();
 
 	void SetLanguageDefinition(const LanguageDefinition& aLanguageDef);
 	const LanguageDefinition& GetLanguageDefinition() const { return mLanguageDefinition; }
@@ -427,7 +425,7 @@ public:
 	inline void SetUIFontSize(float size) { mUIFontSize = size; }
 	inline void SetEditorFontSize(float size) { mEditorFontSize = size; }
 
-	void SetShortcut(TextEditor::ShortcutID id, Shortcut s);
+	void SetShortcut(ImTextEdit::ShortcutID id, Shortcut s);
 
 	inline void SetShowLineNumbers(bool s)
 	{
@@ -493,18 +491,18 @@ public:
 		Stop
 	};
 
-	std::function<void(TextEditor*, int)> OnDebuggerJump;
-	std::function<void(TextEditor*, DebugAction)> OnDebuggerAction;
-	std::function<void(TextEditor*, const std::string&)> OnIdentifierHover;
-	std::function<bool(TextEditor*, const std::string&)> HasIdentifierHover;
-	std::function<void(TextEditor*, const std::string&)> OnExpressionHover;
-	std::function<bool(TextEditor*, const std::string&)> HasExpressionHover;
-	std::function<void(TextEditor*, int)> OnBreakpointRemove;
-	std::function<void(TextEditor*, int, bool, const std::string&, bool)> OnBreakpointUpdate;
+	std::function<void(ImTextEdit*, int)> OnDebuggerJump;
+	std::function<void(ImTextEdit*, DebugAction)> OnDebuggerAction;
+	std::function<void(ImTextEdit*, const std::string&)> OnIdentifierHover;
+	std::function<bool(ImTextEdit*, const std::string&)> HasIdentifierHover;
+	std::function<void(ImTextEdit*, const std::string&)> OnExpressionHover;
+	std::function<bool(ImTextEdit*, const std::string&)> HasExpressionHover;
+	std::function<void(ImTextEdit*, int)> OnBreakpointRemove;
+	std::function<void(ImTextEdit*, int, bool, const std::string&, bool)> OnBreakpointUpdate;
 
-	std::function<void(TextEditor*, const std::string&, TextEditor::Coordinates coords)> OnCtrlAltClick;
-	std::function<void(TextEditor*, const std::string&, const std::string&)> RequestOpen;
-	std::function<void(TextEditor*)> OnContentUpdate;
+	std::function<void(ImTextEdit*, const std::string&, ImTextEdit::Coordinates coords)> OnCtrlAltClick;
+	std::function<void(ImTextEdit*, const std::string&, const std::string&)> RequestOpen;
+	std::function<void(ImTextEdit*)> OnContentUpdate;
 
 	inline void SetPath(const std::string& path) { mPath = path; }
 	inline const std::string& GetPath() { return mPath; }
@@ -529,18 +527,18 @@ private:
 
 		UndoRecord(
 			const std::string& aAdded,
-			const TextEditor::Coordinates aAddedStart,
-			const TextEditor::Coordinates aAddedEnd,
+			const ImTextEdit::Coordinates aAddedStart,
+			const ImTextEdit::Coordinates aAddedEnd,
 
 			const std::string& aRemoved,
-			const TextEditor::Coordinates aRemovedStart,
-			const TextEditor::Coordinates aRemovedEnd,
+			const ImTextEdit::Coordinates aRemovedStart,
+			const ImTextEdit::Coordinates aRemovedEnd,
 
-			TextEditor::EditorState& aBefore,
-			TextEditor::EditorState& aAfter);
+			ImTextEdit::EditorState& aBefore,
+			ImTextEdit::EditorState& aAfter);
 
-		void Undo(TextEditor* aEditor);
-		void Redo(TextEditor* aEditor);
+		void Undo(ImTextEdit* aEditor);
+		void Redo(ImTextEdit* aEditor);
 
 		std::string mAdded;
 		Coordinates mAddedStart;
@@ -569,7 +567,7 @@ private:
 	void AddUndo(UndoRecord& aValue);
 	Coordinates ScreenPosToCoordinates(const ImVec2& aPosition) const;
 	Coordinates MousePosToCoordinates(const ImVec2& aPosition) const;
-	ImVec2 CoordinatesToScreenPos(const TextEditor::Coordinates& aPosition) const;
+	ImVec2 CoordinatesToScreenPos(const ImTextEdit::Coordinates& aPosition) const;
 	Coordinates FindWordStart(const Coordinates& aFrom) const;
 	Coordinates FindWordEnd(const Coordinates& aFrom) const;
 	Coordinates FindNextWord(const Coordinates& aFrom) const;
@@ -607,10 +605,10 @@ private:
 	}
 
 	bool mFunctionDeclarationTooltipEnabled;
-	TextEditor::Coordinates mFunctionDeclarationCoord;
+	ImTextEdit::Coordinates mFunctionDeclarationCoord;
 	bool mFunctionDeclarationTooltip;
 	std::string mFunctionDeclaration;
-	void mOpenFunctionDeclarationTooltip(const std::string& obj, TextEditor::Coordinates coord);
+	void mOpenFunctionDeclarationTooltip(const std::string& obj, ImTextEdit::Coordinates coord);
 
 	std::string mBuildFunctionDef(const std::string& func, const std::string& lang);
 	std::string mBuildVariableType(const ed::SPIRVParser::Variable& var, const std::string& lang);
@@ -694,7 +692,7 @@ private:
 	bool mScrollToTop;
 	bool mTextChanged;
 	bool mColorizerEnabled;
-	float mTextStart;                   // position (in pixels) where a code line starts relative to the left of the TextEditor.
+	float mTextStart;                   // position (in pixels) where a code line starts relative to the left of the ImTextEdit.
 	int  mLeftMargin;
 	bool mCursorPositionChanged;
 	int mColorRangeMin, mColorRangeMax;
