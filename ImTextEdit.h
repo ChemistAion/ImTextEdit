@@ -10,8 +10,11 @@
 #include <thread>
 #include <map>
 #include <regex>
-#include <imgui/imgui.h>
-#include <SHADERed/Objects/SPIRVParser.h>
+
+//#define IMGUI_DEFINE_MATH_OPERATORS
+#include "imgui.h"
+//#include "imgui_internal.h"
+//#include <SHADERed/Objects/SPIRVParser.h>
 
 class TextEditor {
 public:
