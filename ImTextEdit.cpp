@@ -1,5 +1,3 @@
-////	#include <SDL2/SDL_events.h>
-////	#include <SDL2/SDL_keyboard.h>
 #include <algorithm>
 #include <functional>
 #include <chrono>
@@ -9,13 +7,6 @@
 #include <stack>
 
 #include "ImTextEdit.h"
-
-#ifdef max
-	#undef max
-#endif
-#ifdef min
-	#undef min
-#endif
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui/imgui.h"
@@ -145,64 +136,64 @@ const std::vector<ImTextEdit::Shortcut> ImTextEdit::GetDefaultShortcuts()
 	std::vector<ImTextEdit::Shortcut> ret;
 	ret.resize((int)ImTextEdit::ShortcutID::Count);
 
-	ret[(int)ImTextEdit::ShortcutID::Undo] = ImTextEdit::Shortcut(SDLK_z, -1, 0, 1, 0); // CTRL+Z
-	ret[(int)ImTextEdit::ShortcutID::Redo] = ImTextEdit::Shortcut(SDLK_y, -1, 0, 1, 0); // CTRL+Y
-	ret[(int)ImTextEdit::ShortcutID::MoveUp] = ImTextEdit::Shortcut(SDLK_UP, -1, 0, 0, 0); // UP ARROW
-	ret[(int)ImTextEdit::ShortcutID::SelectUp] = ImTextEdit::Shortcut(SDLK_UP, -1, 0, 0, 1); // SHIFT + UP ARROW
-	ret[(int)ImTextEdit::ShortcutID::MoveDown] = ImTextEdit::Shortcut(SDLK_DOWN, -1, 0, 0, 0); // DOWN ARROW
-	ret[(int)ImTextEdit::ShortcutID::SelectDown] = ImTextEdit::Shortcut(SDLK_DOWN, -1, 0, 0, 1); // SHIFT + DOWN ARROW
-	ret[(int)ImTextEdit::ShortcutID::MoveLeft] = ImTextEdit::Shortcut(SDLK_LEFT, -1, 0, 0, 0); // LEFT ARROW (+ SHIFT/CTRL)
-	ret[(int)ImTextEdit::ShortcutID::SelectLeft] = ImTextEdit::Shortcut(SDLK_LEFT, -1, 0, 0, 1); // SHIFT + LEFT ARROW
-	ret[(int)ImTextEdit::ShortcutID::MoveWordLeft] = ImTextEdit::Shortcut(SDLK_LEFT, -1, 0, 1, 0); // CTRL + LEFT ARROW
-	ret[(int)ImTextEdit::ShortcutID::SelectWordLeft] = ImTextEdit::Shortcut(SDLK_LEFT, -1, 0, 1, 1); // CTRL + SHIFT + LEFT ARROW
-	ret[(int)ImTextEdit::ShortcutID::MoveRight] = ImTextEdit::Shortcut(SDLK_RIGHT, -1, 0, 0, 0); // RIGHT ARROW
-	ret[(int)ImTextEdit::ShortcutID::SelectRight] = ImTextEdit::Shortcut(SDLK_RIGHT, -1, 0, 0, 1); // SHIFT + RIGHT ARROW
-	ret[(int)ImTextEdit::ShortcutID::MoveWordRight] = ImTextEdit::Shortcut(SDLK_RIGHT, -1, 0, 1, 0); // CTRL + RIGHT ARROW
-	ret[(int)ImTextEdit::ShortcutID::SelectWordRight] = ImTextEdit::Shortcut(SDLK_RIGHT, -1, 0, 1, 1); // CTRL + SHIFT + RIGHT ARROW
-	ret[(int)ImTextEdit::ShortcutID::MoveUpBlock] = ImTextEdit::Shortcut(SDLK_PAGEUP, -1, 0, 0, 0); // PAGE UP
-	ret[(int)ImTextEdit::ShortcutID::SelectUpBlock] = ImTextEdit::Shortcut(SDLK_PAGEUP, -1, 0, 0, 1); // SHIFT + PAGE UP
-	ret[(int)ImTextEdit::ShortcutID::MoveDownBlock] = ImTextEdit::Shortcut(SDLK_PAGEDOWN, -1, 0, 0, 0); // PAGE DOWN
-	ret[(int)ImTextEdit::ShortcutID::SelectDownBlock] = ImTextEdit::Shortcut(SDLK_PAGEDOWN, -1, 0, 0, 1); // SHIFT + PAGE DOWN
-	ret[(int)ImTextEdit::ShortcutID::MoveTop] = ImTextEdit::Shortcut(SDLK_HOME, -1, 0, 1, 0); // CTRL + HOME
-	ret[(int)ImTextEdit::ShortcutID::SelectTop] = ImTextEdit::Shortcut(SDLK_HOME, -1, 0, 1, 1); // CTRL + SHIFT + HOME
-	ret[(int)ImTextEdit::ShortcutID::MoveBottom] = ImTextEdit::Shortcut(SDLK_END, -1, 0, 1, 0); // CTRL + END
-	ret[(int)ImTextEdit::ShortcutID::SelectBottom] = ImTextEdit::Shortcut(SDLK_END, -1, 0, 1, 1); // CTRL + SHIFT + END
-	ret[(int)ImTextEdit::ShortcutID::MoveStartLine] = ImTextEdit::Shortcut(SDLK_HOME, -1, 0, 0, 0); // HOME
-	ret[(int)ImTextEdit::ShortcutID::SelectStartLine] = ImTextEdit::Shortcut(SDLK_HOME, -1, 0, 0, 1); // SHIFT + HOME
-	ret[(int)ImTextEdit::ShortcutID::MoveEndLine] = ImTextEdit::Shortcut(SDLK_END, -1, 0, 0, 0); // END
-	ret[(int)ImTextEdit::ShortcutID::SelectEndLine] = ImTextEdit::Shortcut(SDLK_END, -1, 0, 0, 1); // SHIFT + END
-	ret[(int)ImTextEdit::ShortcutID::ForwardDelete] = ImTextEdit::Shortcut(SDLK_DELETE, -1, 0, 0, 0); // DELETE
-	ret[(int)ImTextEdit::ShortcutID::ForwardDeleteWord] = ImTextEdit::Shortcut(SDLK_DELETE, -1, 0, 1, 0); // CTRL + DELETE
-	ret[(int)ImTextEdit::ShortcutID::DeleteRight] = ImTextEdit::Shortcut(SDLK_DELETE, -1, 0, 0, 1); // SHIFT+BACKSPACE
-	ret[(int)ImTextEdit::ShortcutID::BackwardDelete] = ImTextEdit::Shortcut(SDLK_BACKSPACE, -1, 0, 0, 0); // BACKSPACE
-	ret[(int)ImTextEdit::ShortcutID::BackwardDeleteWord] = ImTextEdit::Shortcut(SDLK_BACKSPACE, -1, 0, 1, 0); // CTRL + BACKSPACE
-	ret[(int)ImTextEdit::ShortcutID::DeleteLeft] = ImTextEdit::Shortcut(SDLK_BACKSPACE, -1, 0, 0, 1); // SHIFT+BACKSPACE
-	ret[(int)ImTextEdit::ShortcutID::OverwriteCursor] = ImTextEdit::Shortcut(SDLK_INSERT, -1, 0, 0, 0); // INSERT
-	ret[(int)ImTextEdit::ShortcutID::Copy] = ImTextEdit::Shortcut(SDLK_c, -1, 0, 1, 0); // CTRL+C
-	ret[(int)ImTextEdit::ShortcutID::Paste] = ImTextEdit::Shortcut(SDLK_v, -1, 0, 1, 0); // CTRL+V
-	ret[(int)ImTextEdit::ShortcutID::Cut] = ImTextEdit::Shortcut(SDLK_x, -1, 0, 1, 0); // CTRL+X
-	ret[(int)ImTextEdit::ShortcutID::SelectAll] = ImTextEdit::Shortcut(SDLK_a, -1, 0, 1, 0); // CTRL+A
-	ret[(int)ImTextEdit::ShortcutID::AutocompleteOpen] = ImTextEdit::Shortcut(SDLK_SPACE, -1, 0, 1, 0); // CTRL+SPACE
-	ret[(int)ImTextEdit::ShortcutID::AutocompleteSelect] = ImTextEdit::Shortcut(SDLK_TAB, -1, 0, 0, 0); // TAB
-	ret[(int)ImTextEdit::ShortcutID::AutocompleteSelectActive] = ImTextEdit::Shortcut(SDLK_RETURN, -1, 0, 0, 0); // RETURN
-	ret[(int)ImTextEdit::ShortcutID::AutocompleteUp] = ImTextEdit::Shortcut(SDLK_UP, -1, 0, 0, 0); // UP ARROW
-	ret[(int)ImTextEdit::ShortcutID::AutocompleteDown] = ImTextEdit::Shortcut(SDLK_DOWN, -1, 0, 0, 0); // DOWN ARROW
-	ret[(int)ImTextEdit::ShortcutID::NewLine] = ImTextEdit::Shortcut(SDLK_RETURN, -1, 0, 0, 0); // RETURN
-	ret[(int)ImTextEdit::ShortcutID::Indent] = ImTextEdit::Shortcut(SDLK_TAB, -1, 0, 0, 0); // TAB
-	ret[(int)ImTextEdit::ShortcutID::Unindent] = ImTextEdit::Shortcut(SDLK_TAB, -1, 0, 0, 1); // SHIFT + TAB
-	ret[(int)ImTextEdit::ShortcutID::Find] = ImTextEdit::Shortcut(SDLK_f, -1, 0, 1, 0); // CTRL+F
-	ret[(int)ImTextEdit::ShortcutID::Replace] = ImTextEdit::Shortcut(SDLK_h, -1, 0, 1, 0); // CTRL+H
-	ret[(int)ImTextEdit::ShortcutID::FindNext] = ImTextEdit::Shortcut(SDLK_F3, -1, 0, 0, 0); // F3
-	ret[(int)ImTextEdit::ShortcutID::DebugStep] = ImTextEdit::Shortcut(SDLK_F10, -1, 0, 0, 0); // F10
-	ret[(int)ImTextEdit::ShortcutID::DebugStepInto] = ImTextEdit::Shortcut(SDLK_F11, -1, 0, 0, 0); // F11
-	ret[(int)ImTextEdit::ShortcutID::DebugStepOut] = ImTextEdit::Shortcut(SDLK_F11, -1, 0, 0, 1); // SHIFT+F11
-	ret[(int)ImTextEdit::ShortcutID::DebugContinue] = ImTextEdit::Shortcut(SDLK_F5, -1, 0, 0, 0); // F5
-	ret[(int)ImTextEdit::ShortcutID::DebugStop] = ImTextEdit::Shortcut(SDLK_F5, -1, 0, 0, 1); // SHIFT+F5
-	ret[(int)ImTextEdit::ShortcutID::DebugBreakpoint] = ImTextEdit::Shortcut(SDLK_F9, -1, 0, 0, 0); // F9
-	ret[(int)ImTextEdit::ShortcutID::DebugJumpHere] = ImTextEdit::Shortcut(SDLK_h, -1, 1, 1, 0); // CTRL+ALT+H
-	ret[(int)ImTextEdit::ShortcutID::DuplicateLine] = ImTextEdit::Shortcut(SDLK_d, -1, 0, 1, 0);	// CTRL+D
-	ret[(int)ImTextEdit::ShortcutID::CommentLines] = ImTextEdit::Shortcut(SDLK_k, -1, 0, 1, 1); // CTRL+SHIFT+K
-	ret[(int)ImTextEdit::ShortcutID::UncommentLines] = ImTextEdit::Shortcut(SDLK_u, -1, 0, 1, 1); // CTRL+SHIFT+U
+	ret[(int)ImTextEdit::ShortcutID::Undo] = ImTextEdit::Shortcut(0x5A, -1, 0, 1, 0);      // CTRL+Z
+	ret[(int)ImTextEdit::ShortcutID::Redo] = ImTextEdit::Shortcut(0x59, -1, 0, 1, 0); // CTRL+Y
+	ret[(int)ImTextEdit::ShortcutID::MoveUp] = ImTextEdit::Shortcut(0x26, -1, 0, 0, 0);   // UP ARROW
+	ret[(int)ImTextEdit::ShortcutID::SelectUp] = ImTextEdit::Shortcut(0x26, -1, 0, 0, 1);       // SHIFT + UP ARROW
+	ret[(int)ImTextEdit::ShortcutID::MoveDown] = ImTextEdit::Shortcut(0x28, -1, 0, 0, 0);     // DOWN ARROW
+	ret[(int)ImTextEdit::ShortcutID::SelectDown] = ImTextEdit::Shortcut(0x28, -1, 0, 0, 1);   // SHIFT + DOWN ARROW
+	ret[(int)ImTextEdit::ShortcutID::MoveLeft] = ImTextEdit::Shortcut(0x25, -1, 0, 0, 0);     // LEFT ARROW (+ SHIFT/CTRL)
+	ret[(int)ImTextEdit::ShortcutID::SelectLeft] = ImTextEdit::Shortcut(0x25, -1, 0, 0, 1);   // SHIFT + LEFT ARROW
+	ret[(int)ImTextEdit::ShortcutID::MoveWordLeft] = ImTextEdit::Shortcut(0x25, -1, 0, 1, 0); // CTRL + LEFT ARROW
+	ret[(int)ImTextEdit::ShortcutID::SelectWordLeft] = ImTextEdit::Shortcut(0x25, -1, 0, 1, 1); // CTRL + SHIFT + LEFT ARROW
+	ret[(int)ImTextEdit::ShortcutID::MoveRight] = ImTextEdit::Shortcut(0x27, -1, 0, 0, 0);       // RIGHT ARROW
+	ret[(int)ImTextEdit::ShortcutID::SelectRight] = ImTextEdit::Shortcut(0x27, -1, 0, 0, 1);   // SHIFT + RIGHT ARROW
+	ret[(int)ImTextEdit::ShortcutID::MoveWordRight] = ImTextEdit::Shortcut(0x27, -1, 0, 1, 0);   // CTRL + RIGHT ARROW
+	ret[(int)ImTextEdit::ShortcutID::SelectWordRight] = ImTextEdit::Shortcut(0x27, -1, 0, 1, 1);  // CTRL + SHIFT + RIGHT ARROW
+	ret[(int)ImTextEdit::ShortcutID::MoveUpBlock] = ImTextEdit::Shortcut(0x21, -1, 0, 0, 0);     // PAGE UP
+	ret[(int)ImTextEdit::ShortcutID::SelectUpBlock] = ImTextEdit::Shortcut(0x21, -1, 0, 0, 1);    // SHIFT + PAGE UP
+	ret[(int)ImTextEdit::ShortcutID::MoveDownBlock] = ImTextEdit::Shortcut(0x22, -1, 0, 0, 0);    // PAGE DOWN
+	ret[(int)ImTextEdit::ShortcutID::SelectDownBlock] = ImTextEdit::Shortcut(0x22, -1, 0, 0, 1);   // SHIFT + PAGE DOWN
+	ret[(int)ImTextEdit::ShortcutID::MoveTop] = ImTextEdit::Shortcut(0x24, -1, 0, 1, 0);          // CTRL + HOME
+	ret[(int)ImTextEdit::ShortcutID::SelectTop] = ImTextEdit::Shortcut(0x24, -1, 0, 1, 1);         // CTRL + SHIFT + HOME
+	ret[(int)ImTextEdit::ShortcutID::MoveBottom] = ImTextEdit::Shortcut(0x23, -1, 0, 1, 0);        // CTRL + END
+	ret[(int)ImTextEdit::ShortcutID::SelectBottom] = ImTextEdit::Shortcut(0x23, -1, 0, 1, 1);       // CTRL + SHIFT + END
+	ret[(int)ImTextEdit::ShortcutID::MoveStartLine] = ImTextEdit::Shortcut(0x24, -1, 0, 0, 0);     // HOME
+	ret[(int)ImTextEdit::ShortcutID::SelectStartLine] = ImTextEdit::Shortcut(0x24, -1, 0, 0, 1); // SHIFT + HOME
+	ret[(int)ImTextEdit::ShortcutID::MoveEndLine] = ImTextEdit::Shortcut(0x23, -1, 0, 0, 0);        // END
+	ret[(int)ImTextEdit::ShortcutID::SelectEndLine] = ImTextEdit::Shortcut(0x23, -1, 0, 0, 1);    // SHIFT + END
+	ret[(int)ImTextEdit::ShortcutID::ForwardDelete] = ImTextEdit::Shortcut(0x2E, -1, 0, 0, 0);   // DELETE
+	ret[(int)ImTextEdit::ShortcutID::ForwardDeleteWord] = ImTextEdit::Shortcut(0x2E, -1, 0, 1, 0);   // CTRL + DELETE
+	ret[(int)ImTextEdit::ShortcutID::DeleteRight] = ImTextEdit::Shortcut(0x2E, -1, 0, 0, 1);             // SHIFT+BACKSPACE
+	ret[(int)ImTextEdit::ShortcutID::BackwardDelete] = ImTextEdit::Shortcut(0x08, -1, 0, 0, 0);        // BACKSPACE
+	ret[(int)ImTextEdit::ShortcutID::BackwardDeleteWord] = ImTextEdit::Shortcut(0x08, -1, 0, 1, 0);        // CTRL + BACKSPACE
+	ret[(int)ImTextEdit::ShortcutID::DeleteLeft] = ImTextEdit::Shortcut(0x08, -1, 0, 0, 1);            // SHIFT+BACKSPACE
+	ret[(int)ImTextEdit::ShortcutID::OverwriteCursor] = ImTextEdit::Shortcut(0x2D, -1, 0, 0, 0);         // INSERT
+	ret[(int)ImTextEdit::ShortcutID::Copy] = ImTextEdit::Shortcut(0x43, -1, 0, 1, 0);                     // CTRL+C
+	ret[(int)ImTextEdit::ShortcutID::Paste] = ImTextEdit::Shortcut(0x56, -1, 0, 1, 0);                        // CTRL+V
+	ret[(int)ImTextEdit::ShortcutID::Cut] = ImTextEdit::Shortcut(0x58, -1, 0, 1, 0);                      // CTRL+X
+	ret[(int)ImTextEdit::ShortcutID::SelectAll] = ImTextEdit::Shortcut(0x41, -1, 0, 1, 0);                    // CTRL+A
+	ret[(int)ImTextEdit::ShortcutID::AutocompleteOpen] = ImTextEdit::Shortcut(0x20, -1, 0, 1, 0);     // CTRL+SPACE
+	ret[(int)ImTextEdit::ShortcutID::AutocompleteSelect] = ImTextEdit::Shortcut(0x09, -1, 0, 0, 0);         // TAB
+	ret[(int)ImTextEdit::ShortcutID::AutocompleteSelectActive] = ImTextEdit::Shortcut(0x0D, -1, 0, 0, 0); // RETURN
+	ret[(int)ImTextEdit::ShortcutID::AutocompleteUp] = ImTextEdit::Shortcut(0x26, -1, 0, 0, 0);               // UP ARROW
+	ret[(int)ImTextEdit::ShortcutID::AutocompleteDown] = ImTextEdit::Shortcut(0x28, -1, 0, 0, 0);           // DOWN ARROW
+	ret[(int)ImTextEdit::ShortcutID::NewLine] = ImTextEdit::Shortcut(0x0D, -1, 0, 0, 0);                  // RETURN
+	ret[(int)ImTextEdit::ShortcutID::Indent] = ImTextEdit::Shortcut(0x09, -1, 0, 0, 0);                      // TAB
+	ret[(int)ImTextEdit::ShortcutID::Unindent] = ImTextEdit::Shortcut(0x09, -1, 0, 0, 1);                    // SHIFT + TAB
+	ret[(int)ImTextEdit::ShortcutID::Find] = ImTextEdit::Shortcut(0x46, -1, 0, 1, 0);                          // CTRL+F
+	ret[(int)ImTextEdit::ShortcutID::Replace] = ImTextEdit::Shortcut(0x48, -1, 0, 1, 0);                       // CTRL+H
+	ret[(int)ImTextEdit::ShortcutID::FindNext] = ImTextEdit::Shortcut(0x72, -1, 0, 0, 0);                      // F3
+	ret[(int)ImTextEdit::ShortcutID::DebugStep] = ImTextEdit::Shortcut(0x79, -1, 0, 0, 0);                     // F10
+	ret[(int)ImTextEdit::ShortcutID::DebugStepInto] = ImTextEdit::Shortcut(0x7A, -1, 0, 0, 0);                 // F11
+	ret[(int)ImTextEdit::ShortcutID::DebugStepOut] = ImTextEdit::Shortcut(0x7A, -1, 0, 0, 1);                  // SHIFT+F11
+	ret[(int)ImTextEdit::ShortcutID::DebugContinue] = ImTextEdit::Shortcut(0x74, -1, 0, 0, 0);                 // F5
+	ret[(int)ImTextEdit::ShortcutID::DebugStop] = ImTextEdit::Shortcut(0x74, -1, 0, 0, 1);                     // SHIFT+F5
+	ret[(int)ImTextEdit::ShortcutID::DebugBreakpoint] = ImTextEdit::Shortcut(0x78, -1, 0, 0, 0);               // F9
+	ret[(int)ImTextEdit::ShortcutID::DebugJumpHere] = ImTextEdit::Shortcut(0x48, -1, 1, 1, 0);                 // CTRL+ALT+H
+	ret[(int)ImTextEdit::ShortcutID::DuplicateLine] = ImTextEdit::Shortcut(0x44, -1, 0, 1, 0);                 // CTRL+D
+	ret[(int)ImTextEdit::ShortcutID::CommentLines] = ImTextEdit::Shortcut(0x4B, -1, 0, 1, 1);                  // CTRL+SHIFT+K
+	ret[(int)ImTextEdit::ShortcutID::UncommentLines] = ImTextEdit::Shortcut(0x55, -1, 0, 1, 1);                // CTRL+SHIFT+U
 
 	return ret;
 }
