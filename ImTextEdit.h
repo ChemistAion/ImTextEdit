@@ -12,7 +12,7 @@
 #include <regex>
 
 #include "imgui.h"
-//#include <SHADERed/Objects/SPIRVParser.h>
+#include "SPIRVParser.h"
 
 class ImTextEdit {
 public:

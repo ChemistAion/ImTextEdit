@@ -1183,9 +1183,11 @@ void ImTextEdit::HandleKeyboardInputs()
 			ShortcutID curActionID = ShortcutID::Count;
 			bool additionalChecks = true;
 
-			SDL_Scancode sc1 = SDL_GetScancodeFromKey(sct.Key1);
-
-			if ((ImGui::IsKeyPressed(sc1) || (sc1 == SDL_SCANCODE_RETURN && ImGui::IsKeyPressed(SDL_SCANCODE_KP_ENTER))) && ((sct.Key2 != -1 && ImGui::IsKeyPressed(SDL_GetScancodeFromKey(sct.Key2))) || sct.Key2 == -1)) {
+			////	TODO: SDL keyboard stuff
+			////	SDL_Scancode sc1 = SDL_GetScancodeFromKey(sct.Key1);
+			////	
+			////	if ((ImGui::IsKeyPressed(sc1) || (sc1 == SDL_SCANCODE_RETURN && ImGui::IsKeyPressed(SDL_SCANCODE_KP_ENTER))) && ((sct.Key2 != -1 && ImGui::IsKeyPressed(SDL_GetScancodeFromKey(sct.Key2))) || sct.Key2 == -1)) {
+			if (false) {
 				if ((sct.Ctrl == ctrl) && (sct.Alt == alt) && (sct.Shift == shift)) {
 
 					// PRESSED:
@@ -3291,9 +3293,11 @@ void ImTextEdit::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 			if (sct.Key1 == -1)
 				continue;
 
-			SDL_Scancode sc1 = SDL_GetScancodeFromKey(sct.Key1);
-
-			if (ImGui::IsKeyPressed(sc1) && ((sct.Key2 != -1 && ImGui::IsKeyPressed(SDL_GetScancodeFromKey(sct.Key2))) || sct.Key2 == -1)) {
+			////	TODO: SDL keyboard stuff
+			////	SDL_Scancode sc1 = SDL_GetScancodeFromKey(sct.Key1);
+			////	
+			////	if (ImGui::IsKeyPressed(sc1) && ((sct.Key2 != -1 && ImGui::IsKeyPressed(SDL_GetScancodeFromKey(sct.Key2))) || sct.Key2 == -1)) {
+			if (false) {
 				if (((sct.Ctrl == 0 && !ctrl) || (sct.Ctrl == 1 && ctrl) || (sct.Ctrl == 2)) &&		// ctrl check
 					((sct.Alt == 0 && !alt) || (sct.Alt == 1 && alt) || (sct.Alt == 2)) &&			// alt check
 					((sct.Shift == 0 && !shift) || (sct.Shift == 1 && shift) || (sct.Shift == 2))) {// shift check
