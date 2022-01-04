@@ -6,6 +6,8 @@
 #include <cmath>
 #include <stack>
 
+#include "_editor.hpp"
+
 #include "ImTextEdit.h"
 
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -1174,11 +1176,9 @@ void ImTextEdit::HandleKeyboardInputs()
 			ShortcutID curActionID = ShortcutID::Count;
 			bool additionalChecks = true;
 
-			////	TODO: SDL keyboard stuff
-			////	SDL_Scancode sc1 = SDL_GetScancodeFromKey(sct.Key1);
-			////	
-			////	if ((ImGui::IsKeyPressed(sc1) || (sc1 == SDL_SCANCODE_RETURN && ImGui::IsKeyPressed(SDL_SCANCODE_KP_ENTER))) && ((sct.Key2 != -1 && ImGui::IsKeyPressed(SDL_GetScancodeFromKey(sct.Key2))) || sct.Key2 == -1)) {
-			if (false) {
+			int sc1 = ::GetAsyncKeyState(sct.Key1) & 0x8000 ? sct.Key1 : -1;
+
+			if ((ImGui::IsKeyPressed(sc1) || (sc1 == VK_RETURN && ImGui::IsKeyPressed(VK_RETURN))) && ((sct.Key2 != -1 && ImGui::IsKeyPressed(sct.Key2)) || sct.Key2 == -1)) {
 				if ((sct.Ctrl == ctrl) && (sct.Alt == alt) && (sct.Shift == shift)) {
 
 					// PRESSED:
@@ -3284,11 +3284,8 @@ void ImTextEdit::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 			if (sct.Key1 == -1)
 				continue;
 
-			////	TODO: SDL keyboard stuff
-			////	SDL_Scancode sc1 = SDL_GetScancodeFromKey(sct.Key1);
-			////	
-			////	if (ImGui::IsKeyPressed(sc1) && ((sct.Key2 != -1 && ImGui::IsKeyPressed(SDL_GetScancodeFromKey(sct.Key2))) || sct.Key2 == -1)) {
-			if (false) {
+			int sc1 = ::GetAsyncKeyState(sct.Key1) & 0x8000 ? sct.Key1 : -1;
+			if (ImGui::IsKeyPressed(sc1) && ((sct.Key2 != -1 && ImGui::IsKeyPressed(sct.Key2))) || sct.Key2 == -1) {
 				if (((sct.Ctrl == 0 && !ctrl) || (sct.Ctrl == 1 && ctrl) || (sct.Ctrl == 2)) &&		// ctrl check
 					((sct.Alt == 0 && !alt) || (sct.Alt == 1 && alt) || (sct.Alt == 2)) &&			// alt check
 					((sct.Shift == 0 && !shift) || (sct.Shift == 1 && shift) || (sct.Shift == 2))) {// shift check
@@ -3553,7 +3550,9 @@ void ImTextEdit::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		ImGui::OpenPopup("Condition##condition");
 
 	ImFont* font = ImGui::GetFont();
+	////TODO! 
 	ImGui::PopFont();
+
 	ImGui::SetNextWindowSize(ImVec2(430, 175), ImGuiCond_Once);
 	if (ImGui::BeginPopupModal("Condition##condition")) {
 		ImGui::Checkbox("Use condition", &mPopupCondition_Use);
@@ -3590,6 +3589,7 @@ void ImTextEdit::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		}
 		ImGui::EndPopup();
 	}
+	////TODO! 
 	ImGui::PushFont(font);
 
 	mWithinRender = false;
